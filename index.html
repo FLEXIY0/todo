@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>Simple Todo</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="theme-classic">
+
+<!-- DRAWER -->
+<div id="drawer">
+  <div class="drawer-section">Themes</div>
+  <div class="theme-item active" id="ti-classic" onclick="setTheme('classic')">
+    <div class="theme-dot classic"></div>
+    <div class="theme-info">
+      <div class="theme-name">Classic</div>
+      <div class="theme-sub">Amber · Dark</div>
+    </div>
+    <div class="theme-check"></div>
+  </div>
+  <div class="theme-item" id="ti-oled" onclick="setTheme('oled')">
+    <div class="theme-dot oled"></div>
+    <div class="theme-info">
+      <div class="theme-name">OLED</div>
+      <div class="theme-sub">Black · White</div>
+    </div>
+    <div class="theme-check"></div>
+  </div>
+  <div class="drawer-div"></div>
+  <div class="drawer-clear" onclick="confirmClearAll()">
+    <span class="dc-icon">✕</span> Clear All
+  </div>
+</div>
+
+<!-- MAIN -->
+<div id="main">
+  <div id="drawerMask"></div>
+  <div class="app-header">
+    <div class="app-title" id="appTitle"
+         contenteditable="true" spellcheck="false"
+         data-placeholder="Simple Todo"></div>
+  </div>
+  <div class="categories" id="categoriesContainer"></div>
+  <div class="add-category-wrap">
+    <div class="add-category-btn" id="addCategoryBtn">+ Add Category</div>
+  </div>
+</div>
+
+<!-- BOTTOM SHEET -->
+<div class="sheet-overlay" id="sheetOverlay">
+  <div class="sheet">
+    <div class="sheet-label" id="sheetLabel">Options</div>
+    <div id="sheetItems"></div>
+  </div>
+</div>
+
+<!-- DIALOG -->
+<div class="dialog-overlay" id="dialogOverlay">
+  <div class="dialog">
+    <div class="dialog-title" id="dialogTitle">Rename</div>
+    <input  type="text" id="dialogInput"    placeholder="Category name…" />
+    <textarea           id="dialogTextarea" placeholder="Describe your task…" style="display:none"></textarea>
+    <div class="dialog-hint" id="dialogHint" style="display:none">Ctrl + Enter to save</div>
+    <div class="dialog-buttons">
+      <button class="d-btn cancel"  onclick="closeDialog()">Cancel</button>
+      <button class="d-btn confirm" onclick="confirmDialog()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="ui.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
