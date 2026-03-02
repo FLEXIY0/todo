@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">SimpleTodo</string>
+    <string name="title_activity_main">SimpleTodo</string>
+    <string name="package_name">com.droopi.todo</string>
+    <string name="custom_url_scheme">com.droopi.todo</string>
+</resources>
