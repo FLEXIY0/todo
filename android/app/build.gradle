@@ -7,8 +7,9 @@ android {
         applicationId "com.droopi.todo"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        // CI overrides these from the release tag / run number
+        versionCode (project.hasProperty('appVersionCode') ? project.property('appVersionCode').toInteger() : 2)
+        versionName (project.hasProperty('appVersionName') ? project.property('appVersionName') : '1.1')
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

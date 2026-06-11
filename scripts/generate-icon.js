@@ -45,6 +45,19 @@ const GRID = [
 ];
 const GW = GRID[0].length, GH = GRID.length;
 
+// Bounding box of the drawn pixels — the artwork is centered by content,
+// not by grid, so an asymmetric grid doesn't shift the leaf off-center.
+const BB = (() => {
+  let x0 = GW, y0 = GH, x1 = -1, y1 = -1;
+  for (let y = 0; y < GH; y++)
+    for (let x = 0; x < GW; x++)
+      if (GRID[y][x] !== '.') {
+        if (x < x0) x0 = x; if (x > x1) x1 = x;
+        if (y < y0) y0 = y; if (y > y1) y1 = y;
+      }
+  return { x0, y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+})();
+
 // ── Minimal PNG encoder (RGBA, 8-bit) ────────────────────────
 const CRC_TABLE = (() => {
   const t = new Int32Array(256);
@@ -95,16 +108,16 @@ function encodePNG(pixels, w, h) {
 // `bg` = tile color or null for transparent. `mask`: 'rect' | 'round' | 'circle'.
 function render(size, { scale = 1, bg = null, mask = 'rect' } = {}) {
   const px = Buffer.alloc(size * size * 4);
-  const cell = Math.max(1, Math.floor((size * scale) / GW));
-  const art = cell * GW;
-  const off = Math.floor((size - art) / 2);
+  const cell = Math.max(1, Math.floor((size * scale) / Math.max(BB.w, BB.h)));
+  const offX = Math.floor((size - cell * BB.w) / 2) - BB.x0 * cell;
+  const offY = Math.floor((size - cell * BB.h) / 2) - BB.y0 * cell;
   const r = size * 0.18;           // corner radius for 'round' mask
   const cx = size / 2 - 0.5, half = size / 2;
 
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       let color = bg;
-      const gx = Math.floor((x - off) / cell), gy = Math.floor((y - off) / cell);
+      const gx = Math.floor((x - offX) / cell), gy = Math.floor((y - offY) / cell);
       if (gx >= 0 && gx < GW && gy >= 0 && gy < GH) {
         const c = COLORS[GRID[gy][gx]];
         if (c) color = c;
@@ -135,18 +148,22 @@ function write(rel, buf) {
 }
 
 // ── Outputs ──────────────────────────────────────────────────
-// Source / store icon: ivory rounded tile, leaf at ~72%
-write('icon.png', render(1024, { scale: 0.72, bg: BG, mask: 'round' }));
-write('assets/icon.png', render(1024, { scale: 0.72, bg: BG, mask: 'rect' }));
-write('assets/icon-only.png', render(1024, { scale: 0.9 }));
+if (require.main === module) {
+  // Source / store icon: ivory rounded tile, leaf at ~72%
+  write('icon.png', render(1024, { scale: 0.72, bg: BG, mask: 'round' }));
+  write('assets/icon.png', render(1024, { scale: 0.72, bg: BG, mask: 'rect' }));
+  write('assets/icon-only.png', render(1024, { scale: 0.9 }));
 
-const RES = 'android/app/src/main/res';
-const DPI = { mdpi: 1, hdpi: 1.5, xhdpi: 2, xxhdpi: 3, xxxhdpi: 4 };
-for (const [dpi, k] of Object.entries(DPI)) {
-  const launcher = Math.round(48 * k);   // legacy launcher icon
-  const adaptive = Math.round(108 * k);  // adaptive foreground canvas
-  // Adaptive: only ~66/108 of the canvas is safe; keep the leaf inside it.
-  write(`${RES}/mipmap-${dpi}/ic_launcher_foreground.png`, render(adaptive, { scale: 0.5 }));
-  write(`${RES}/mipmap-${dpi}/ic_launcher.png`, render(launcher, { scale: 0.72, bg: BG, mask: 'round' }));
-  write(`${RES}/mipmap-${dpi}/ic_launcher_round.png`, render(launcher, { scale: 0.66, bg: BG, mask: 'circle' }));
+  const RES = 'android/app/src/main/res';
+  const DPI = { mdpi: 1, hdpi: 1.5, xhdpi: 2, xxhdpi: 3, xxxhdpi: 4 };
+  for (const [dpi, k] of Object.entries(DPI)) {
+    const launcher = Math.round(48 * k);   // legacy launcher icon
+    const adaptive = Math.round(108 * k);  // adaptive foreground canvas
+    // Adaptive: only ~66/108 of the canvas is safe; keep the leaf inside it.
+    write(`${RES}/mipmap-${dpi}/ic_launcher_foreground.png`, render(adaptive, { scale: 0.5 }));
+    write(`${RES}/mipmap-${dpi}/ic_launcher.png`, render(launcher, { scale: 0.72, bg: BG, mask: 'round' }));
+    write(`${RES}/mipmap-${dpi}/ic_launcher_round.png`, render(launcher, { scale: 0.66, bg: BG, mask: 'circle' }));
+  }
 }
+
+module.exports = { GRID, COLORS, BG };
