@@ -24,8 +24,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.release_tag || github.ref }}
+
+      # Strips accidental whitespace from the input and derives the app
+      # version: tag vX.Y → versionName X.Y; versionCode = run number.
+      - name: Resolve version
+        id: ver
+        run: |
+          RAW="${{ inputs.release_tag || github.ref_name }}"
+          TAG="$(echo -n "$RAW" | tr -d '[:space:]')"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if [[ "$TAG" == v* ]]; then
+            echo "name=${TAG#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=0.0.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: actions/setup-java@v4
         with:
@@ -50,7 +62,9 @@ jobs:
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
+          ./gradlew assembleRelease --no-daemon \
+            -PappVersionName="${{ steps.ver.outputs.name }}" \
+            -PappVersionCode="${{ github.run_number }}"
 
       - name: Collect APK
         run: cp android/app/build/outputs/apk/release/app-release.apk simple-todo.apk
@@ -61,10 +75,10 @@ jobs:
           path: simple-todo.apk
 
       - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
+        if: startsWith(steps.ver.outputs.tag, 'v')
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.release_tag || github.ref_name }}
+          TAG: ${{ steps.ver.outputs.tag }}
         # If the release already exists (e.g. created manually in the UI),
         # attach/replace the APK instead of failing on creation.
         run: |

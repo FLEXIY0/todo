@@ -1,3 +1,19 @@
+// ── App meta ─────────────────────────────────────────────────
+const APP_VERSION = '1.1';
+const REPO_URL = 'https://github.com/FLEXIY0/todo';
+
+function openAbout() {
+  closeDrawer();
+  setTimeout(() => openSheet('About', [
+    { icon: '🌿', label: `Simple Todo v${APP_VERSION}`, action: () => { } },
+    { icon: '↗', label: 'Source code on GitHub', action: () => {
+        const a = document.createElement('a');
+        a.href = REPO_URL; a.target = '_blank'; a.rel = 'noopener';
+        a.click();
+      } },
+  ]), 300);
+}
+
 // ── Theme ────────────────────────────────────────────────────
 const THEME_IDS = ['classic', 'oled', 'anthropic'];
 
@@ -64,6 +80,7 @@ let epStartX = 0, epStartY = 0;
 function startEmptyPress(x, y) {
   epStartX = x; epStartY = y;
   emptyPressTimer = setTimeout(() => {
+    if (changelogView) return;
     navigator.vibrate && navigator.vibrate(30);
     if (subtaskView) {
       openSheet('', [

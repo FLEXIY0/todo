@@ -52,11 +52,17 @@ const strikeReverseSet = new Set();
 const animTimers = {};
 let pressTimer = null;
 let subtaskView = null; // { catId, taskId } while inside a task's subtasks
+let changelogView = false; // true while the "What's new" screen is open
 
 // ── Render ───────────────────────────────────────────────────
 function render() {
   const container = document.getElementById('categoriesContainer');
   container.innerHTML = '';
+
+  if (changelogView) {
+    renderChangelog(container);
+    return;
+  }
 
   if (subtaskView) {
     renderSubtasks(container);
@@ -73,7 +79,7 @@ function render() {
     const header = document.createElement('div');
     header.className = 'category-header';
     header.innerHTML = `<span class="cat-line"></span><span class="category-name">${esc(cat.name)}</span><span class="cat-line-mid"></span><span class="category-count">${doneN}/${cat.tasks.length}</span><span class="cat-line"></span>`;
-    setupLongPress(header, () => openCategorySheet(cat.id));
+    setupCategoryReorder(header, catEl, cat.id);
     catEl.appendChild(header);
 
     const tasksEl = document.createElement('div');
@@ -165,6 +171,153 @@ function renderSubtasks(container) {
 
   catEl.appendChild(tasksEl);
   container.appendChild(catEl);
+}
+
+// ── Changelog ────────────────────────────────────────────────
+// Hand-curated, GitHub-diff style. '+' added, '-' removed, '~' changed.
+const CHANGELOG = [
+  {
+    version: 'v1.1', date: 'June 2026', changes: [
+      { t: '+', text: 'Subtasks: nest steps inside any task, one level deep' },
+      { t: '+', text: 'Progress stripes under a task — one per subtask' },
+      { t: '+', text: 'Tap a task with subtasks to open its nested screen' },
+      { t: '+', text: '"Subtasks" item in the task long-press menu' },
+      { t: '+', text: 'Anthropic theme — light ivory with terracotta accents' },
+      { t: '+', text: 'Pixel-art leaf icon, generated entirely from code' },
+      { t: '+', text: 'Hold a category title and drag to reorder categories' },
+      { t: '+', text: '"What\'s new" and "About" screens in the drawer' },
+      { t: '+', text: 'Signed APK builds on GitHub Actions, releases by tag' },
+      { t: '~', text: 'A task with subtasks completes itself when all of them are done' },
+      { t: '~', text: 'App version now follows the release tag automatically' },
+      { t: '-', text: 'Manual "Mark complete" for tasks that have subtasks' },
+    ],
+  },
+  {
+    version: 'v1.0', date: '2026', changes: [
+      { t: '+', text: 'Categories with editable names and done counters' },
+      { t: '+', text: 'Animated strikethrough that can reverse mid-flight' },
+      { t: '+', text: 'Classic (amber) and OLED (pure black) themes' },
+      { t: '+', text: 'Long-press menus for tasks, categories and empty space' },
+      { t: '+', text: 'Swipe-right drawer, editable app title' },
+      { t: '+', text: 'State persists in localStorage' },
+    ],
+  },
+];
+
+function openChangelog() { closeDrawer(); changelogView = true; subtaskView = null; render(); }
+function closeChangelog() { changelogView = false; render(); }
+
+function renderChangelog(container) {
+  const back = document.createElement('div');
+  back.className = 'subtask-back';
+  back.innerHTML = `<span class="sb-arrow">←</span><span>What's new</span>`;
+  back.addEventListener('click', closeChangelog);
+  container.appendChild(back);
+
+  CHANGELOG.forEach(rel => {
+    const relEl = document.createElement('div');
+    relEl.className = 'category cl-release';
+
+    const header = document.createElement('div');
+    header.className = 'category-header';
+    header.innerHTML = `<span class="cat-line"></span><span class="category-name">${esc(rel.version)}</span><span class="cat-line-mid"></span><span class="category-count">${esc(rel.date)}</span><span class="cat-line"></span>`;
+    relEl.appendChild(header);
+
+    const list = document.createElement('div');
+    list.className = 'cl-lines';
+    rel.changes.forEach(ch => {
+      const cls = ch.t === '+' ? 'add' : ch.t === '-' ? 'del' : 'mod';
+      const line = document.createElement('div');
+      line.className = 'cl-line ' + cls;
+      line.innerHTML = `<span class="cl-sign">${ch.t}</span><span class="cl-text">${esc(ch.text)}</span>`;
+      list.appendChild(line);
+    });
+    relEl.appendChild(list);
+    container.appendChild(relEl);
+  });
+}
+
+// ── Category reorder (hold & drag) ───────────────────────────
+// Long-press lifts the category; dragging moves it, neighbours slide out
+// of the way; releasing without moving opens the category sheet instead.
+const CAT_GAP = 18; // matches .categories flex gap in CSS
+
+function setupCategoryReorder(header, catEl, catId) {
+  const start = (e) => {
+    const p = e.touches ? e.touches[0] : e;
+    beginCategoryDrag(catEl, catId, p.clientX, p.clientY);
+  };
+  header.addEventListener('touchstart', start, { passive: true });
+  header.addEventListener('mousedown', start);
+}
+
+function beginCategoryDrag(catEl, catId, sx, sy) {
+  let lifted = false, moved = false;
+  let els = [], mids = [], i0 = 0, target = 0, slot = 0;
+
+  const timer = setTimeout(() => {
+    lifted = true;
+    navigator.vibrate && navigator.vibrate(30);
+    els = [...document.querySelectorAll('#categoriesContainer > .category')];
+    i0 = target = els.indexOf(catEl);
+    mids = els.map(el => { const r = el.getBoundingClientRect(); return r.top + r.height / 2; });
+    slot = catEl.offsetHeight + CAT_GAP;
+    catEl.classList.add('drag-lift');
+    els.forEach(el => { if (el !== catEl) el.classList.add('drag-shift'); });
+  }, 480);
+
+  const move = (e) => {
+    const p = e.touches ? e.touches[0] : e;
+    if (!lifted) {
+      // movement before the long-press fires = scroll intent, abort
+      if (Math.abs(p.clientX - sx) > 9 || Math.abs(p.clientY - sy) > 9) end(true);
+      return;
+    }
+    if (e.cancelable) e.preventDefault(); // keep the page from scrolling
+    const dy = p.clientY - sy;
+    if (Math.abs(dy) > 6) moved = true;
+    catEl.style.transform = `translateY(${dy}px)`;
+
+    const center = mids[i0] + dy;
+    target = i0;
+    els.forEach((el, j) => {
+      if (j === i0) return;
+      if (j < i0 && center < mids[j]) {
+        el.style.transform = `translateY(${slot}px)`;
+        target = Math.min(target, j);
+      } else if (j > i0 && center > mids[j]) {
+        el.style.transform = `translateY(${-slot}px)`;
+        target = Math.max(target, j);
+      } else {
+        el.style.transform = '';
+      }
+    });
+  };
+
+  const end = (cancelled) => {
+    clearTimeout(timer);
+    document.removeEventListener('touchmove', move);
+    document.removeEventListener('touchend', onEnd);
+    document.removeEventListener('touchcancel', onCancel);
+    document.removeEventListener('mousemove', move);
+    document.removeEventListener('mouseup', onEnd);
+    if (!lifted) return; // released before long-press fired — nothing to do
+
+    if (moved && !cancelled && target !== i0) {
+      const [cat] = state.categories.splice(i0, 1);
+      state.categories.splice(target, 0, cat);
+    }
+    render(); // clears lift/shift classes and inline transforms
+    if (!moved && cancelled !== true) openCategorySheet(catId);
+  };
+  const onEnd = () => end(false);
+  const onCancel = () => end(true);
+
+  document.addEventListener('touchmove', move, { passive: false });
+  document.addEventListener('touchend', onEnd);
+  document.addEventListener('touchcancel', onCancel);
+  document.addEventListener('mousemove', move);
+  document.addEventListener('mouseup', onEnd);
 }
 
 // ── Long Press ───────────────────────────────────────────────
