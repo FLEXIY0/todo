@@ -491,67 +491,111 @@ function openSettings() {
 }
 function closeSettings() { flipTo(-1, () => { settingsView = false; }); }
 
-// ── Page flip engine ─────────────────────────────────────────
-// One page (.flip-page) rotates around the left edge like a book page.
-// Forward (dir 1): the current page turns away revealing the next one.
-// Back (dir -1): the previous page turns back in over the current one.
+// ── Page peel engine ─────────────────────────────────────────
+// Full-screen page curl: a snapshot of the current screen lies on top of
+// the (already rendered) target screen and peels away from the corner —
+// clip-path reveals the page underneath while a rolled-paper strip
+// (.flip-curl) follows the fold line. dir 1 peels toward the left
+// (forward), dir -1 mirrors it (back). Finger-driven via p ∈ [0..1].
 let flip = null;
-const FLIP_ANG = 105, FLIP_MS = 450;
 
-function flipLayerEl(html) {
-  const cont = document.getElementById('categoriesContainer');
-  const l = document.createElement('div');
-  l.className = 'categories flip-page';
-  l.style.top = cont.offsetTop + 'px';
-  l.style.minHeight = Math.max(cont.offsetHeight, 240) + 'px';
-  if (html !== undefined) l.innerHTML = html;
-  document.getElementById('main').appendChild(l);
-  return l;
+function buildPeelLayer(dir) {
+  const main = document.getElementById('main');
+  const layer = document.createElement('div');
+  layer.className = 'flip-page';
+  const sy = window.scrollY;
+  layer.style.top = sy + 'px';
+  layer.style.height = window.innerHeight + 'px';
+
+  const content = document.createElement('div');
+  content.className = 'flip-content';
+  const inner = document.createElement('div');
+  inner.className = 'flip-inner';
+  inner.style.transform = `translateY(${-sy}px)`;
+  [...main.children].forEach(ch => {
+    if (ch.id === 'drawerMask' || ch.classList.contains('flip-page')) return;
+    inner.appendChild(ch.cloneNode(true));
+  });
+  content.appendChild(inner);
+
+  const curl = document.createElement('div');
+  curl.className = 'flip-curl';
+
+  layer.appendChild(content);
+  layer.appendChild(curl);
+  main.appendChild(layer);
+  flip = { layer, content, curl, dir, p: 0 };
+  setPeel(0);
+  return layer;
 }
 
-function setFlipAngle(l, a) { // a: 0 flat … 1 fully turned
-  l.style.transform = `rotateY(${(-FLIP_ANG * a).toFixed(2)}deg)`;
-  l.style.opacity = a < .55 ? 1 : Math.max(0, 1 - (a - .55) / .45).toFixed(3);
+function setPeel(p) {
+  if (!flip) return;
+  p = Math.min(1, Math.max(0, p));
+  flip.p = p;
+  const W = window.innerWidth, H = window.innerHeight;
+  const s = W * 0.38;       // fold slant: the bottom corner leads the turn
+  const T = W + s;          // total sweep so the page clears the screen
+  const xB = W - p * T;     // fold intersection with the bottom edge
+  const xT = xB + s;        // …and with the top edge (may be off-screen)
+
+  let poly;
+  if (xT >= W) {
+    // early phase: only the bottom corner is folded over
+    const yR = H * (1 - (W - xB) / s);
+    poly = [[0, 0], [W, 0], [W, yR], [xB, H], [0, H]];
+  } else {
+    poly = [[0, 0], [xT, 0], [xB, H], [0, H]];
+  }
+  const mx = x => flip.dir === 1 ? x : W - x;
+  flip.content.style.clipPath =
+    'polygon(' + poly.map(([x, y]) => `${mx(x).toFixed(1)}px ${y.toFixed(1)}px`).join(',') + ')';
+
+  if (p < 0.004 || p > 0.996) { flip.curl.style.opacity = 0; return; }
+  flip.curl.style.opacity = 1;
+  const cw = 26 + 58 * Math.sin(Math.PI * Math.min(p * 1.25, 1)); // paper roll width
+  const L = Math.hypot(s, H) + 90;
+  const midX = mx((xB + xT) / 2), midY = H / 2;
+  const ang = Math.atan2(s, H) * (flip.dir === 1 ? 1 : -1) * 180 / Math.PI;
+  flip.curl.style.width = cw + 'px';
+  flip.curl.style.height = L + 'px';
+  flip.curl.style.transform =
+    `translate(${(midX - cw / 2).toFixed(1)}px, ${(midY - L / 2).toFixed(1)}px) rotate(${ang.toFixed(2)}deg)`;
 }
 
-// Finger-driven flip between spaces
+function tweenPeel(from, to, done) {
+  const dur = 420, t0 = performance.now();
+  const ease = t => 1 - Math.pow(1 - t, 3);
+  (function step(now) {
+    if (!flip) return;
+    const k = Math.min(1, (now - t0) / dur);
+    setPeel(from + (to - from) * ease(k));
+    if (k < 1) requestAnimationFrame(step);
+    else done && done();
+  })(t0);
+}
+
+// Finger-driven peel between spaces
 function flipDragStart(dir, tgtIdx) {
   if (flip) return false;
   const vis = visSpaces();
   const tgt = tgtIdx !== undefined ? tgtIdx : spaceIndex + dir;
   if (tgt < 0 || tgt >= vis.length || tgt === spaceIndex) return false;
-  const cont = document.getElementById('categoriesContainer');
-  let layer;
-  if (dir === 1) {
-    layer = flipLayerEl(cont.innerHTML); // ghost of the current page on top
-    cont.innerHTML = '';
-    renderSpace(cont, vis[tgt]);         // target page already beneath
-    setFlipAngle(layer, 0);
-  } else {
-    layer = flipLayerEl();               // previous page, folded at the spine
-    renderSpace(layer, vis[tgt]);
-    setFlipAngle(layer, 1);
-  }
-  flip = { layer, dir, tgt, drag: true };
+  buildPeelLayer(dir);
+  flip.prevIndex = spaceIndex;
+  spaceIndex = tgt;
+  render(); // target page is real and live underneath the peeling snapshot
   return true;
 }
-function flipDragMove(p) {
-  if (!flip || !flip.drag) return;
-  setFlipAngle(flip.layer, flip.dir === 1 ? p : 1 - p);
-}
+function flipDragMove(p) { if (flip) setPeel(p); }
 function flipDragEnd(commit) {
-  if (!flip || !flip.drag) return;
-  flip.drag = false;
-  const { layer, dir, tgt } = flip;
-  layer.classList.add('anim');
-  const endA = dir === 1 ? (commit ? 1 : 0) : (commit ? 0 : 1);
-  requestAnimationFrame(() => setFlipAngle(layer, endA));
-  setTimeout(() => {
-    if (commit) spaceIndex = tgt;
-    layer.remove();
+  if (!flip) return;
+  const f = flip;
+  tweenPeel(f.p, commit ? 1 : 0, () => {
+    if (!commit) { spaceIndex = f.prevIndex; render(); }
+    f.layer.remove();
     flip = null;
-    render();
-  }, FLIP_MS + 40);
+  });
 }
 
 function flipToSpace(i) {
@@ -559,30 +603,14 @@ function flipToSpace(i) {
   if (flipDragStart(i > spaceIndex ? 1 : -1, i)) flipDragEnd(true);
 }
 
-// Programmatic flip for nested screens (subtasks, history, settings)
+// Programmatic peel for nested screens (subtasks, history, settings)
 function flipTo(dir, mutate) {
   if (flip) { mutate(); render(); return; }
-  const cont = document.getElementById('categoriesContainer');
-  let layer;
-  if (dir === 1) {
-    layer = flipLayerEl(cont.innerHTML); // old screen turns away
-    mutate();
-    render();
-    setFlipAngle(layer, 0);
-    flip = { layer, dir };
-    layer.classList.add('anim');
-    requestAnimationFrame(() => requestAnimationFrame(() => setFlipAngle(layer, 1)));
-  } else {
-    mutate();
-    renderTabs();                        // tabs first so the layer offset is final
-    layer = flipLayerEl();               // new screen turns back in
-    renderCurrentInto(layer);
-    setFlipAngle(layer, 1);
-    flip = { layer, dir };
-    layer.classList.add('anim');
-    requestAnimationFrame(() => requestAnimationFrame(() => setFlipAngle(layer, 0)));
-  }
-  setTimeout(() => { layer.remove(); flip = null; render(); }, FLIP_MS + 40);
+  buildPeelLayer(dir);
+  mutate();
+  render();
+  const f = flip;
+  tweenPeel(0, 1, () => { f.layer.remove(); flip = null; });
 }
 
 // ── Category reorder (hold & drag) ───────────────────────────

@@ -278,7 +278,8 @@ body {
   will-change: transform;
 }
 
-body.theme-classic #main {
+body.theme-classic #main,
+body.theme-classic .flip-content {
   background:
     radial-gradient(ellipse 40% 100% at 0% 50%, rgba(110, 52, 8, 0.28) 0%, transparent 100%),
     radial-gradient(ellipse 35% 100% at 100% 50%, rgba(90, 42, 6, 0.22) 0%, transparent 100%),
@@ -286,7 +287,8 @@ body.theme-classic #main {
     #100c06;
 }
 
-body.theme-anthropic #main {
+body.theme-anthropic #main,
+body.theme-anthropic .flip-content {
   background:
     radial-gradient(ellipse 60% 45% at 100% 100%, rgba(193, 95, 60, 0.08) 0%, transparent 100%),
     radial-gradient(ellipse 45% 90% at 0% 0%, rgba(193, 95, 60, 0.05) 0%, transparent 100%),
@@ -365,24 +367,48 @@ body.theme-anthropic #main {
 }
 
 #main {
-  perspective: 1500px;
+  position: relative;
 }
 
 .flip-page {
   position: absolute;
   left: 0;
   right: 0;
-  z-index: 40;
-  transform-origin: left center;
-  background: var(--bg);
+  z-index: 300;
+  overflow: hidden;
   pointer-events: none;
-  will-change: transform, opacity;
-  box-shadow: 14px 0 36px rgba(0, 0, 0, .35);
-  padding-bottom: 24px;
 }
 
-.flip-page.anim {
-  transition: transform .45s cubic-bezier(.3, .9, .3, 1), opacity .45s ease;
+.flip-content {
+  position: absolute;
+  inset: 0;
+  background: var(--bg);
+  will-change: clip-path;
+}
+
+.flip-inner {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+}
+
+.flip-curl {
+  position: absolute;
+  left: 0;
+  top: 0;
+  opacity: 0;
+  border-radius: 12px;
+  /* rolled-paper cylinder: theme paper tinted by a shading gradient */
+  background-color: var(--bg2);
+  background-image: linear-gradient(to right,
+      rgba(0, 0, 0, .42) 0%,
+      rgba(255, 255, 255, .05) 32%,
+      rgba(255, 255, 255, .24) 50%,
+      rgba(255, 255, 255, .05) 68%,
+      rgba(0, 0, 0, .48) 100%);
+  box-shadow: 6px 0 22px rgba(0, 0, 0, .42), -4px 0 14px rgba(0, 0, 0, .28);
+  will-change: transform;
 }
 
 /* ── Shared space bar ───────────────────────────────────────── */
