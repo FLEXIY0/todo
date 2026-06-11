@@ -3,16 +3,32 @@ const STORAGE_KEY = 'todo_state';
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    v: 2,
     theme: state.theme,
-    categories: state.categories,
+    spaces: state.spaces,
+    settings: state.settings,
+    history: state.history,
+    sync: state.sync,
   }));
+  if (typeof maybeSync === 'function') maybeSync();
 }
 
 function loadState() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
     if (!saved) return;
-    if (saved.categories) state.categories = saved.categories;
+    if (saved.spaces) {
+      state.spaces = saved.spaces;
+    } else if (saved.categories) {
+      // v1 → v2 migration: the old flat board becomes the first space
+      state.spaces[0].categories = saved.categories;
+    }
+    if (!state.spaces.some(s => s.shared)) {
+      state.spaces.push({ id: 'sp_shared', name: 'Shared', shared: true, mode: 'todo', categories: [] });
+    }
+    if (saved.settings) Object.assign(state.settings, saved.settings);
+    if (Array.isArray(saved.history)) state.history = saved.history;
+    if (saved.sync) Object.assign(state.sync, saved.sync);
     if (saved.theme) {
       state.theme = saved.theme;
       document.body.className = 'theme-' + saved.theme;
@@ -24,53 +40,199 @@ function loadState() {
 // ── State ────────────────────────────────────────────────────
 const state = {
   theme: 'classic',
-  categories: [
+  spaces: [
     {
-      id: 'c1', name: 'Personal Tasks', tasks: [
-        { id: 't1', text: 'Buy groceries for the week', done: false },
-        { id: 't2', text: 'Call the dentist and schedule an appointment', done: false },
+      id: 'sp_todo', name: 'To-Do', categories: [
+        {
+          id: 'c1', name: 'Personal Tasks', tasks: [
+            { id: 't1', text: 'Buy groceries for the week', done: false },
+            { id: 't2', text: 'Call the dentist and schedule an appointment', done: false },
+          ]
+        },
+        {
+          id: 'c2', name: 'Work', tasks: [
+            { id: 't3', text: 'Finish the project report for the client', done: true },
+            { id: 't4', text: 'Review pull requests before standup', done: false },
+            { id: 't5', text: 'Update documentation on the internal wiki', done: false },
+          ]
+        },
+        {
+          id: 'c3', name: 'Ideas', tasks: [
+            { id: 't6', text: 'Build a habit tracker app', done: false },
+          ]
+        },
       ]
     },
-    {
-      id: 'c2', name: 'Work', tasks: [
-        { id: 't3', text: 'Finish the project report for the client', done: true },
-        { id: 't4', text: 'Review pull requests before standup', done: false },
-        { id: 't5', text: 'Update documentation on the internal wiki', done: false },
-      ]
-    },
-    {
-      id: 'c3', name: 'Ideas', tasks: [
-        { id: 't6', text: 'Build a habit tracker app', done: false },
-      ]
-    },
-  ]
+    { id: 'sp_wish', name: 'Wishlist', categories: [] },
+    { id: 'sp_shared', name: 'Shared', shared: true, mode: 'todo', categories: [] },
+  ],
+  settings: { wishlistOn: true, sharedOn: true, historyLimit: 200 },
+  history: [],
+  sync: { selfId: null, remoteId: null, tombs: {} },
 };
 
+let spaceIndex = 0;
+let subtaskView = null;   // { catId, taskId } while inside a task's subtasks
+let historyView = false;  // history journal screen
+let settingsView = false; // settings screen
 
 const strikeForwardSet = new Set();
 const strikeReverseSet = new Set();
 const animTimers = {};
 let pressTimer = null;
-let subtaskView = null; // { catId, taskId } while inside a task's subtasks
-let changelogView = false; // true while the "What's new" screen is open
+
+// ── Space helpers ────────────────────────────────────────────
+function visSpaces() {
+  return state.spaces.filter(s =>
+    s.shared ? state.settings.sharedOn :
+    s.id === 'sp_wish' ? state.settings.wishlistOn : true);
+}
+function curSpace() {
+  const v = visSpaces();
+  if (spaceIndex >= v.length) spaceIndex = Math.max(0, v.length - 1);
+  return v[spaceIndex];
+}
+function cats() { return curSpace().categories; }
+function stamp(o) { o.mt = Date.now(); }
+function trunc(s, n = 30) { return s.length > n ? s.slice(0, n) + '…' : s; }
+// record a deletion tombstone so sync doesn't resurrect the item
+function tombIfShared(space, id) {
+  if (space.shared) state.sync.tombs[id] = Date.now();
+}
+
+// ── History journal ──────────────────────────────────────────
+const HIST_LIMITS = [50, 200, 1000, 0]; // 0 = keep everything
+
+function logH(sign, txt, data) {
+  state.history.unshift({
+    id: 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    ts: Date.now(), s: sign, txt, d: data || null,
+  });
+  trimHistory();
+}
+function trimHistory() {
+  const lim = state.settings.historyLimit;
+  if (lim && state.history.length > lim) state.history.length = lim;
+}
+function cycleHistLimit() {
+  const i = HIST_LIMITS.indexOf(state.settings.historyLimit);
+  state.settings.historyLimit = HIST_LIMITS[(i + 1) % HIST_LIMITS.length];
+  trimHistory();
+  render();
+}
+
+function restoreH(entryId) {
+  const e = state.history.find(h => h.id === entryId);
+  if (!e || !e.d || e.used) return;
+  const d = e.d;
+  const sp = state.spaces.find(s => s.id === d.sp) || curSpace();
+  const findCat = (catId, catName) => {
+    let c = sp.categories.find(x => x.id === catId);
+    if (!c) {
+      c = { id: catId || 'c' + Date.now(), name: catName || 'Restored', tasks: [], mt: Date.now() };
+      sp.categories.push(c);
+    }
+    return c;
+  };
+  const revive = (cat, task) => {
+    if (cat.tasks.some(t => t.id === task.id)) return;
+    task.mt = Date.now();
+    delete state.sync.tombs[task.id];
+    cat.tasks.push(task);
+  };
+
+  switch (d.k) {
+    case 'task_del': revive(findCat(d.catId, d.catName), d.task); break;
+    case 'tasks_clear': d.items.forEach(it => revive(findCat(it.catId, it.catName), it.task)); break;
+    case 'cat_del':
+      if (!sp.categories.some(c => c.id === d.category.id)) {
+        d.category.mt = Date.now();
+        delete state.sync.tombs[d.category.id];
+        sp.categories.splice(Math.min(d.index, sp.categories.length), 0, d.category);
+      }
+      break;
+    case 'task_edit': {
+      const t = sp.categories.find(c => c.id === d.catId)?.tasks.find(t => t.id === d.taskId);
+      if (t) { t.text = d.old; stamp(t); }
+      else revive(findCat(d.catId, d.catName), { id: d.taskId, text: d.old, done: false });
+      break;
+    }
+    case 'cat_rename': {
+      const c = sp.categories.find(c => c.id === d.catId);
+      if (c) { c.name = d.old; stamp(c); }
+      break;
+    }
+    case 'sub_edit': {
+      const t = sp.categories.find(c => c.id === d.catId)?.tasks.find(t => t.id === d.taskId);
+      const s = t?.subtasks?.find(s => s.id === d.subId);
+      if (s) { s.text = d.old; stamp(t); }
+      break;
+    }
+    case 'sub_del': {
+      const t = sp.categories.find(c => c.id === d.catId)?.tasks.find(t => t.id === d.taskId);
+      if (t) {
+        t.subtasks = t.subtasks || [];
+        if (!t.subtasks.some(s => s.id === d.sub.id)) t.subtasks.push(d.sub);
+        syncParentDone(t);
+        stamp(t);
+      }
+      break;
+    }
+    case 'space_wipe':
+      d.categories.forEach(c => {
+        if (!sp.categories.some(x => x.id === c.id)) {
+          c.mt = Date.now();
+          delete state.sync.tombs[c.id];
+          sp.categories.push(c);
+        }
+      });
+      break;
+    case 'space_del':
+      if (!state.spaces.some(s => s.id === d.space.id)) {
+        state.spaces.splice(Math.max(0, state.spaces.length - 1), 0, d.space);
+      }
+      break;
+  }
+  e.used = true;
+  logH('↩', 'Restored: ' + e.txt);
+  navigator.vibrate && navigator.vibrate(20);
+  render();
+}
 
 // ── Render ───────────────────────────────────────────────────
 function render() {
-  const container = document.getElementById('categoriesContainer');
+  renderTabs();
+  renderCurrentInto(document.getElementById('categoriesContainer'));
+  saveState();
+}
+
+function renderCurrentInto(container) {
   container.innerHTML = '';
+  if (historyView) return renderHistory(container);
+  if (settingsView) return renderSettings(container);
+  if (subtaskView) return renderSubtasks(container);
+  renderSpace(container, curSpace());
+}
 
-  if (changelogView) {
-    renderChangelog(container);
-    return;
-  }
+function renderTabs() {
+  const el = document.getElementById('spaceTabs');
+  const hidden = subtaskView || historyView || settingsView;
+  el.style.display = hidden ? 'none' : 'flex';
+  if (hidden) return;
+  el.innerHTML = '';
+  visSpaces().forEach((sp, i) => {
+    const t = document.createElement('div');
+    t.className = 'space-tab' + (i === spaceIndex ? ' active' : '');
+    t.textContent = sp.name;
+    t.addEventListener('click', () => flipToSpace(i));
+    el.appendChild(t);
+  });
+}
 
-  if (subtaskView) {
-    renderSubtasks(container);
-    saveState();
-    return;
-  }
+function renderSpace(container, space) {
+  if (space.shared) container.appendChild(buildSharedBar(space));
 
-  state.categories.forEach(cat => {
+  space.categories.forEach(cat => {
     const catEl = document.createElement('div');
     catEl.className = 'category';
     catEl.dataset.catId = cat.id;
@@ -116,130 +278,316 @@ function render() {
     catEl.appendChild(tasksEl);
     container.appendChild(catEl);
   });
-  saveState();
+
+  if (!space.categories.length) {
+    const hint = document.createElement('div');
+    hint.className = 'empty-hint';
+    hint.textContent = space.shared ? 'Shared space is empty' : 'Nothing here yet';
+    container.appendChild(hint);
+    const addBtn = document.createElement('div');
+    addBtn.className = 'add-task-btn center';
+    addBtn.innerHTML = `<div class="add-task-icon">+</div><span>Add category</span>`;
+    addBtn.addEventListener('click', () => openDialog('New category', '', val => addCategory(val), false));
+    container.appendChild(addBtn);
+  }
 }
 
-// Nested screen: one task's subtasks, framed like a category
-function renderSubtasks(container) {
-  const cat = state.categories.find(c => c.id === subtaskView.catId);
-  const task = cat?.tasks.find(t => t.id === subtaskView.taskId);
-  if (!task) { subtaskView = null; render(); return; }
-  const subs = task.subtasks = task.subtasks || [];
+// Shared space header: mode chips + sync controls
+function buildSharedBar(space) {
+  const bar = document.createElement('div');
+  bar.className = 'shared-bar';
 
+  const chips = document.createElement('div');
+  chips.className = 'mode-chips';
+  [['todo', 'To-Do'], ['wish', 'Wishlist']].forEach(([m, label]) => {
+    const chip = document.createElement('div');
+    chip.className = 'mode-chip' + (space.mode === m ? ' active' : '');
+    chip.textContent = label;
+    chip.addEventListener('click', () => setSharedMode(m));
+    chips.appendChild(chip);
+  });
+  bar.appendChild(chips);
+
+  const row = document.createElement('div');
+  row.className = 'sync-row';
+  const st = typeof syncState !== 'undefined' ? syncState : 'off';
+  const lbl = { off: 'Not connected', wait: 'Connecting…', on: 'Connected', err: 'Error' }[st];
+  row.innerHTML = `<span class="sync-dot ${st}" id="syncDot"></span><span class="sync-lbl" id="syncLabel">${lbl}</span>`;
+  const inviteBtn = document.createElement('span');
+  inviteBtn.className = 'sync-btn';
+  inviteBtn.textContent = 'Invite';
+  inviteBtn.addEventListener('click', () => startInvite());
+  const joinBtn = document.createElement('span');
+  joinBtn.className = 'sync-btn';
+  joinBtn.textContent = 'Join';
+  joinBtn.addEventListener('click', () => joinShared());
+  row.appendChild(inviteBtn);
+  row.appendChild(joinBtn);
+  bar.appendChild(row);
+  return bar;
+}
+
+function setSharedMode(m) {
+  const sp = state.spaces.find(s => s.shared);
+  if (!sp || sp.mode === m) return;
+  sp.mode = m;
+  sp.modeMt = Date.now();
+  logH('~', `Shared space mode → ${m === 'todo' ? 'To-Do' : 'Wishlist'}`);
+  render();
+}
+
+// ── History screen ───────────────────────────────────────────
+function renderHistory(container) {
   const back = document.createElement('div');
   back.className = 'subtask-back';
-  back.innerHTML = `<span class="sb-arrow">←</span><span>${esc(cat.name)}</span>`;
-  back.addEventListener('click', closeSubtasks);
+  back.innerHTML = `<span class="sb-arrow">←</span><span>History</span>`;
+  back.addEventListener('click', closeHistory);
   container.appendChild(back);
 
-  const catEl = document.createElement('div');
-  catEl.className = 'category subtask-view';
-  catEl.dataset.catId = cat.id;
+  const bar = document.createElement('div');
+  bar.className = 'hist-bar';
+  const lim = state.settings.historyLimit;
+  bar.innerHTML = `<span class="sync-lbl">Every change is recorded</span>`;
+  const chip = document.createElement('span');
+  chip.className = 'sync-btn';
+  chip.textContent = 'Keep: ' + (lim === 0 ? 'all' : lim);
+  chip.addEventListener('click', cycleHistLimit);
+  bar.appendChild(chip);
+  container.appendChild(bar);
 
-  const doneN = subs.filter(s => s.done).length;
-  const name = task.text.length > 28 ? task.text.slice(0, 28) + '…' : task.text;
-  const header = document.createElement('div');
-  header.className = 'category-header';
-  header.innerHTML = `<span class="cat-line"></span><span class="category-name">${esc(name)}</span><span class="cat-line-mid"></span><span class="category-count">${doneN}/${subs.length}</span><span class="cat-line"></span>`;
-  catEl.appendChild(header);
+  if (!state.history.length) {
+    const hint = document.createElement('div');
+    hint.className = 'empty-hint';
+    hint.textContent = 'No changes recorded yet';
+    container.appendChild(hint);
+    return;
+  }
 
-  const tasksEl = document.createElement('div');
-  tasksEl.className = 'tasks';
-  subs.forEach(sub => {
-    const el = document.createElement('div');
-    const isFwd = strikeForwardSet.has(sub.id);
-    const isRev = strikeReverseSet.has(sub.id);
+  const signCls = { '+': 'add', '-': 'del', '~': 'mod', '✓': 'done', '○': 'undone', '↩': 'res' };
+  const list = document.createElement('div');
+  list.className = 'category hist-list';
+  state.history.slice(0, 400).forEach(h => {
+    const line = document.createElement('div');
+    line.className = 'cl-line ' + (signCls[h.s] || 'mod');
+    line.innerHTML = `<span class="cl-sign">${h.s}</span><span class="cl-time">${fmtTs(h.ts)}</span><span class="cl-text">${esc(h.txt)}</span>`;
+    if (h.d && !h.used) {
+      const btn = document.createElement('span');
+      btn.className = 'cl-restore';
+      btn.textContent = '↩';
+      btn.title = 'Restore';
+      btn.addEventListener('click', ev => { ev.stopPropagation(); restoreH(h.id); });
+      line.appendChild(btn);
+    }
+    list.appendChild(line);
+  });
+  container.appendChild(list);
+}
 
-    let cls = 'task-item';
-    if (sub.done || isRev) cls += ' done';
-    if (isFwd) cls += ' strike-fwd';
-    if (isRev) cls += ' strike-rev';
+function fmtTs(ts) {
+  const d = new Date(ts), now = new Date();
+  if (d.toDateString() === now.toDateString())
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
 
-    el.className = cls;
-    el.dataset.id = sub.id;
-    el.innerHTML = `<div class="task-bullet"></div><div class="task-text"><span class="strike-wrap">${esc(sub.text)}</span></div>`;
-    el.addEventListener('click', () => toggleSubtask(cat.id, task.id, sub.id));
-    setupLongPress(el, () => openSubtaskSheet(cat.id, task.id, sub.id));
-    tasksEl.appendChild(el);
+function openHistory() {
+  closeDrawer();
+  setTimeout(() => flipTo(1, () => { historyView = true; settingsView = false; subtaskView = null; }), 260);
+}
+function closeHistory() { flipTo(-1, () => { historyView = false; }); }
+
+// ── Settings screen ──────────────────────────────────────────
+function renderSettings(container) {
+  const back = document.createElement('div');
+  back.className = 'subtask-back';
+  back.innerHTML = `<span class="sb-arrow">←</span><span>Settings</span>`;
+  back.addEventListener('click', closeSettings);
+  container.appendChild(back);
+
+  const frame = document.createElement('div');
+  frame.className = 'category';
+  frame.innerHTML = `<div class="category-header"><span class="cat-line"></span><span class="category-name">Spaces</span><span class="cat-line-mid"></span><span class="cat-line"></span></div>`;
+  const list = document.createElement('div');
+  list.className = 'tasks';
+
+  state.spaces.forEach(sp => {
+    const row = document.createElement('div');
+    row.className = 'set-row';
+    const name = document.createElement('span');
+    name.className = 'set-name';
+    name.textContent = sp.name + (sp.shared ? ' · shared' : '');
+    row.appendChild(name);
+
+    const ren = document.createElement('span');
+    ren.className = 'set-act';
+    ren.textContent = '✏️';
+    ren.addEventListener('click', () => promptRenameSpace(sp.id));
+    row.appendChild(ren);
+
+    if (sp.id === 'sp_wish' || sp.shared) {
+      const key = sp.shared ? 'sharedOn' : 'wishlistOn';
+      const sw = document.createElement('div');
+      sw.className = 'sw' + (state.settings[key] ? ' on' : '');
+      sw.addEventListener('click', () => {
+        state.settings[key] = !state.settings[key];
+        logH('~', `${sp.name} space ${state.settings[key] ? 'enabled' : 'disabled'}`);
+        spaceIndex = 0;
+        render();
+      });
+      row.appendChild(sw);
+    } else if (sp.id !== 'sp_todo') {
+      const del = document.createElement('span');
+      del.className = 'set-act danger';
+      del.textContent = '🗑️';
+      del.addEventListener('click', () => deleteSpace(sp.id));
+      row.appendChild(del);
+    }
+    list.appendChild(row);
   });
 
   const addBtn = document.createElement('div');
   addBtn.className = 'add-task-btn';
-  addBtn.innerHTML = `<div class="add-task-icon">+</div><span>Add subtask</span>`;
-  addBtn.addEventListener('click', () => promptAddSubtask(cat.id, task.id));
-  tasksEl.appendChild(addBtn);
+  addBtn.innerHTML = `<div class="add-task-icon">+</div><span>Add space</span>`;
+  addBtn.addEventListener('click', () => openDialog('New space', '', val => {
+    const sp = { id: 'sp' + Date.now(), name: val, categories: [], mt: Date.now() };
+    state.spaces.splice(Math.max(0, state.spaces.length - 1), 0, sp); // before shared
+    logH('+', `Added space "${trunc(val)}"`);
+    render();
+  }, false));
+  list.appendChild(addBtn);
 
-  catEl.appendChild(tasksEl);
-  container.appendChild(catEl);
+  frame.appendChild(list);
+  container.appendChild(frame);
 }
 
-// ── Changelog ────────────────────────────────────────────────
-// Hand-curated, GitHub-diff style. '+' added, '-' removed, '~' changed.
-const CHANGELOG = [
-  {
-    version: 'v1.1', date: 'June 2026', changes: [
-      { t: '+', text: 'Subtasks: nest steps inside any task, one level deep' },
-      { t: '+', text: 'Progress stripes under a task — one per subtask' },
-      { t: '+', text: 'Tap a task with subtasks to open its nested screen' },
-      { t: '+', text: '"Subtasks" item in the task long-press menu' },
-      { t: '+', text: 'Anthropic theme — light ivory with terracotta accents' },
-      { t: '+', text: 'Pixel-art leaf icon, generated entirely from code' },
-      { t: '+', text: 'Hold a category title and drag to reorder categories' },
-      { t: '+', text: '"What\'s new" and "About" screens in the drawer' },
-      { t: '+', text: 'Signed APK builds on GitHub Actions, releases by tag' },
-      { t: '~', text: 'A task with subtasks completes itself when all of them are done' },
-      { t: '~', text: 'App version now follows the release tag automatically' },
-      { t: '-', text: 'Manual "Mark complete" for tasks that have subtasks' },
-    ],
-  },
-  {
-    version: 'v1.0', date: '2026', changes: [
-      { t: '+', text: 'Categories with editable names and done counters' },
-      { t: '+', text: 'Animated strikethrough that can reverse mid-flight' },
-      { t: '+', text: 'Classic (amber) and OLED (pure black) themes' },
-      { t: '+', text: 'Long-press menus for tasks, categories and empty space' },
-      { t: '+', text: 'Swipe-right drawer, editable app title' },
-      { t: '+', text: 'State persists in localStorage' },
-    ],
-  },
-];
+function promptRenameSpace(spId) {
+  const sp = state.spaces.find(s => s.id === spId);
+  if (!sp) return;
+  openDialog('Rename space', sp.name, val => {
+    logH('~', `Renamed space "${trunc(sp.name)}" → "${trunc(val)}"`);
+    sp.name = val;
+    stamp(sp);
+    render();
+  }, false);
+}
 
-function openChangelog() { closeDrawer(); changelogView = true; subtaskView = null; render(); }
-function closeChangelog() { changelogView = false; render(); }
+function deleteSpace(spId) {
+  const sp = state.spaces.find(s => s.id === spId);
+  if (!sp || sp.id === 'sp_todo' || sp.shared) return;
+  openSheet(`Delete space "${trunc(sp.name, 24)}"?`, [
+    { icon: '✕', label: 'Yes, delete', danger: true, action: () => {
+        logH('-', `Deleted space "${trunc(sp.name)}"`, { k: 'space_del', space: sp });
+        state.spaces = state.spaces.filter(s => s.id !== spId);
+        spaceIndex = 0;
+        render();
+      } },
+    { icon: '←', label: 'Cancel', action: () => { } },
+  ]);
+}
 
-function renderChangelog(container) {
-  const back = document.createElement('div');
-  back.className = 'subtask-back';
-  back.innerHTML = `<span class="sb-arrow">←</span><span>What's new</span>`;
-  back.addEventListener('click', closeChangelog);
-  container.appendChild(back);
+function openSettings() {
+  closeDrawer();
+  setTimeout(() => flipTo(1, () => { settingsView = true; historyView = false; subtaskView = null; }), 260);
+}
+function closeSettings() { flipTo(-1, () => { settingsView = false; }); }
 
-  CHANGELOG.forEach(rel => {
-    const relEl = document.createElement('div');
-    relEl.className = 'category cl-release';
+// ── Page flip engine ─────────────────────────────────────────
+// One page (.flip-page) rotates around the left edge like a book page.
+// Forward (dir 1): the current page turns away revealing the next one.
+// Back (dir -1): the previous page turns back in over the current one.
+let flip = null;
+const FLIP_ANG = 105, FLIP_MS = 450;
 
-    const header = document.createElement('div');
-    header.className = 'category-header';
-    header.innerHTML = `<span class="cat-line"></span><span class="category-name">${esc(rel.version)}</span><span class="cat-line-mid"></span><span class="category-count">${esc(rel.date)}</span><span class="cat-line"></span>`;
-    relEl.appendChild(header);
+function flipLayerEl(html) {
+  const cont = document.getElementById('categoriesContainer');
+  const l = document.createElement('div');
+  l.className = 'categories flip-page';
+  l.style.top = cont.offsetTop + 'px';
+  l.style.minHeight = Math.max(cont.offsetHeight, 240) + 'px';
+  if (html !== undefined) l.innerHTML = html;
+  document.getElementById('main').appendChild(l);
+  return l;
+}
 
-    const list = document.createElement('div');
-    list.className = 'cl-lines';
-    rel.changes.forEach(ch => {
-      const cls = ch.t === '+' ? 'add' : ch.t === '-' ? 'del' : 'mod';
-      const line = document.createElement('div');
-      line.className = 'cl-line ' + cls;
-      line.innerHTML = `<span class="cl-sign">${ch.t}</span><span class="cl-text">${esc(ch.text)}</span>`;
-      list.appendChild(line);
-    });
-    relEl.appendChild(list);
-    container.appendChild(relEl);
-  });
+function setFlipAngle(l, a) { // a: 0 flat … 1 fully turned
+  l.style.transform = `rotateY(${(-FLIP_ANG * a).toFixed(2)}deg)`;
+  l.style.opacity = a < .55 ? 1 : Math.max(0, 1 - (a - .55) / .45).toFixed(3);
+}
+
+// Finger-driven flip between spaces
+function flipDragStart(dir, tgtIdx) {
+  if (flip) return false;
+  const vis = visSpaces();
+  const tgt = tgtIdx !== undefined ? tgtIdx : spaceIndex + dir;
+  if (tgt < 0 || tgt >= vis.length || tgt === spaceIndex) return false;
+  const cont = document.getElementById('categoriesContainer');
+  let layer;
+  if (dir === 1) {
+    layer = flipLayerEl(cont.innerHTML); // ghost of the current page on top
+    cont.innerHTML = '';
+    renderSpace(cont, vis[tgt]);         // target page already beneath
+    setFlipAngle(layer, 0);
+  } else {
+    layer = flipLayerEl();               // previous page, folded at the spine
+    renderSpace(layer, vis[tgt]);
+    setFlipAngle(layer, 1);
+  }
+  flip = { layer, dir, tgt, drag: true };
+  return true;
+}
+function flipDragMove(p) {
+  if (!flip || !flip.drag) return;
+  setFlipAngle(flip.layer, flip.dir === 1 ? p : 1 - p);
+}
+function flipDragEnd(commit) {
+  if (!flip || !flip.drag) return;
+  flip.drag = false;
+  const { layer, dir, tgt } = flip;
+  layer.classList.add('anim');
+  const endA = dir === 1 ? (commit ? 1 : 0) : (commit ? 0 : 1);
+  requestAnimationFrame(() => setFlipAngle(layer, endA));
+  setTimeout(() => {
+    if (commit) spaceIndex = tgt;
+    layer.remove();
+    flip = null;
+    render();
+  }, FLIP_MS + 40);
+}
+
+function flipToSpace(i) {
+  if (i === spaceIndex || flip) return;
+  if (flipDragStart(i > spaceIndex ? 1 : -1, i)) flipDragEnd(true);
+}
+
+// Programmatic flip for nested screens (subtasks, history, settings)
+function flipTo(dir, mutate) {
+  if (flip) { mutate(); render(); return; }
+  const cont = document.getElementById('categoriesContainer');
+  let layer;
+  if (dir === 1) {
+    layer = flipLayerEl(cont.innerHTML); // old screen turns away
+    mutate();
+    render();
+    setFlipAngle(layer, 0);
+    flip = { layer, dir };
+    layer.classList.add('anim');
+    requestAnimationFrame(() => requestAnimationFrame(() => setFlipAngle(layer, 1)));
+  } else {
+    mutate();
+    renderTabs();                        // tabs first so the layer offset is final
+    layer = flipLayerEl();               // new screen turns back in
+    renderCurrentInto(layer);
+    setFlipAngle(layer, 1);
+    flip = { layer, dir };
+    layer.classList.add('anim');
+    requestAnimationFrame(() => requestAnimationFrame(() => setFlipAngle(layer, 0)));
+  }
+  setTimeout(() => { layer.remove(); flip = null; render(); }, FLIP_MS + 40);
 }
 
 // ── Category reorder (hold & drag) ───────────────────────────
 // Long-press lifts the category; dragging moves it, neighbours slide out
-// of the way; releasing without moving opens the category sheet instead.
+// of the way; releasing without movement opens the category sheet instead.
 const CAT_GAP = 18; // matches .categories flex gap in CSS
 
 function setupCategoryReorder(header, catEl, catId) {
@@ -304,8 +652,9 @@ function beginCategoryDrag(catEl, catId, sx, sy) {
     if (!lifted) return; // released before long-press fired — nothing to do
 
     if (moved && !cancelled && target !== i0) {
-      const [cat] = state.categories.splice(i0, 1);
-      state.categories.splice(target, 0, cat);
+      const [cat] = cats().splice(i0, 1);
+      cats().splice(target, 0, cat);
+      logH('~', `Moved category "${trunc(cat.name)}"`);
     }
     render(); // clears lift/shift classes and inline transforms
     if (!moved && cancelled !== true) openCategorySheet(catId);
@@ -318,6 +667,61 @@ function beginCategoryDrag(catEl, catId, sx, sy) {
   document.addEventListener('touchcancel', onCancel);
   document.addEventListener('mousemove', move);
   document.addEventListener('mouseup', onEnd);
+}
+
+// ── Subtask screen ───────────────────────────────────────────
+// Nested screen: one task's subtasks, framed like a category
+function renderSubtasks(container) {
+  const cat = cats().find(c => c.id === subtaskView.catId);
+  const task = cat?.tasks.find(t => t.id === subtaskView.taskId);
+  if (!task) { subtaskView = null; renderSpace(container, curSpace()); renderTabs(); return; }
+  const subs = task.subtasks = task.subtasks || [];
+
+  const back = document.createElement('div');
+  back.className = 'subtask-back';
+  back.innerHTML = `<span class="sb-arrow">←</span><span>${esc(cat.name)}</span>`;
+  back.addEventListener('click', closeSubtasks);
+  container.appendChild(back);
+
+  const catEl = document.createElement('div');
+  catEl.className = 'category subtask-view';
+  catEl.dataset.catId = cat.id;
+
+  const doneN = subs.filter(s => s.done).length;
+  const name = trunc(task.text, 28);
+  const header = document.createElement('div');
+  header.className = 'category-header';
+  header.innerHTML = `<span class="cat-line"></span><span class="category-name">${esc(name)}</span><span class="cat-line-mid"></span><span class="category-count">${doneN}/${subs.length}</span><span class="cat-line"></span>`;
+  catEl.appendChild(header);
+
+  const tasksEl = document.createElement('div');
+  tasksEl.className = 'tasks';
+  subs.forEach(sub => {
+    const el = document.createElement('div');
+    const isFwd = strikeForwardSet.has(sub.id);
+    const isRev = strikeReverseSet.has(sub.id);
+
+    let cls = 'task-item';
+    if (sub.done || isRev) cls += ' done';
+    if (isFwd) cls += ' strike-fwd';
+    if (isRev) cls += ' strike-rev';
+
+    el.className = cls;
+    el.dataset.id = sub.id;
+    el.innerHTML = `<div class="task-bullet"></div><div class="task-text"><span class="strike-wrap">${esc(sub.text)}</span></div>`;
+    el.addEventListener('click', () => toggleSubtask(cat.id, task.id, sub.id));
+    setupLongPress(el, () => openSubtaskSheet(cat.id, task.id, sub.id));
+    tasksEl.appendChild(el);
+  });
+
+  const addBtn = document.createElement('div');
+  addBtn.className = 'add-task-btn';
+  addBtn.innerHTML = `<div class="add-task-icon">+</div><span>Add subtask</span>`;
+  addBtn.addEventListener('click', () => promptAddSubtask(cat.id, task.id));
+  tasksEl.appendChild(addBtn);
+
+  catEl.appendChild(tasksEl);
+  container.appendChild(catEl);
 }
 
 // ── Long Press ───────────────────────────────────────────────
@@ -388,24 +792,29 @@ function applyToggle(item, itemId, updateCount) {
 }
 
 function toggleTask(catId, taskId) {
-  const task = state.categories.find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
+  const task = cats().find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
   if (!task) return;
   if (task.subtasks && task.subtasks.length) { openSubtasks(catId, taskId); return; }
   applyToggle(task, taskId, () => updateCategoryCount(catId));
+  stamp(task);
+  logH(task.done ? '✓' : '○', `${task.done ? 'Completed' : 'Reopened'} "${trunc(task.text)}"`);
+  saveState();
 }
 
 function toggleSubtask(catId, taskId, subId) {
-  const task = state.categories.find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
+  const task = cats().find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
   const sub = task?.subtasks?.find(s => s.id === subId);
   if (!sub) return;
   applyToggle(sub, subId, updateSubtaskCount);
   syncParentDone(task);
+  stamp(task);
+  logH(sub.done ? '✓' : '○', `${sub.done ? 'Completed' : 'Reopened'} subtask "${trunc(sub.text)}"`);
   saveState();
 }
 
 // ── Subtasks ─────────────────────────────────────────────────
-function openSubtasks(catId, taskId) { subtaskView = { catId, taskId }; render(); }
-function closeSubtasks() { subtaskView = null; render(); }
+function openSubtasks(catId, taskId) { flipTo(1, () => { subtaskView = { catId, taskId }; }); }
+function closeSubtasks() { flipTo(-1, () => { subtaskView = null; }); }
 
 // A task with subtasks is done exactly when all of them are done
 function syncParentDone(task) {
@@ -414,41 +823,63 @@ function syncParentDone(task) {
 
 function updateSubtaskCount() {
   if (!subtaskView) return;
-  const task = state.categories.find(c => c.id === subtaskView.catId)?.tasks.find(t => t.id === subtaskView.taskId);
+  const task = cats().find(c => c.id === subtaskView.catId)?.tasks.find(t => t.id === subtaskView.taskId);
   const countEl = document.querySelector('.category.subtask-view .category-count');
   if (task && countEl) countEl.textContent = `${task.subtasks.filter(s => s.done).length}/${task.subtasks.length}`;
 }
 
 function promptAddSubtask(catId, taskId) {
   openDialog('New subtask', '', val => {
-    const task = state.categories.find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
+    const task = cats().find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
     if (!task) return;
     task.subtasks = task.subtasks || [];
     task.subtasks.push({ id: 's' + Date.now(), text: val, done: false });
     syncParentDone(task);
+    stamp(task);
+    logH('+', `Added subtask "${trunc(val)}" to "${trunc(task.text, 20)}"`);
     render();
   }, true);
 }
 
 function promptEditSubtask(catId, taskId, subId) {
-  const sub = state.categories.find(c => c.id === catId)?.tasks.find(t => t.id === taskId)?.subtasks?.find(s => s.id === subId);
-  if (sub) openDialog('Edit subtask', sub.text, val => { sub.text = val; render(); }, true);
+  const task = cats().find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
+  const sub = task?.subtasks?.find(s => s.id === subId);
+  if (!sub) return;
+  openDialog('Edit subtask', sub.text, val => {
+    logH('~', `Edited subtask "${trunc(sub.text, 20)}" → "${trunc(val, 20)}"`,
+      { k: 'sub_edit', sp: curSpace().id, catId, taskId, subId, old: sub.text });
+    sub.text = val;
+    stamp(task);
+    render();
+  }, true);
 }
 
 function deleteSubtask(catId, taskId, subId) {
-  const task = state.categories.find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
+  const task = cats().find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
   if (!task || !task.subtasks) return;
+  const sub = task.subtasks.find(s => s.id === subId);
+  if (sub) logH('-', `Deleted subtask "${trunc(sub.text)}"`,
+    { k: 'sub_del', sp: curSpace().id, catId, taskId, sub });
   task.subtasks = task.subtasks.filter(s => s.id !== subId);
   syncParentDone(task);
+  stamp(task);
   render();
 }
 
+// ── Task / category actions ──────────────────────────────────
 function clearCompletedTasks(catId) {
-  const cat = state.categories.find(c => c.id === catId);
+  const cat = cats().find(c => c.id === catId);
   if (!cat) return;
 
   const doneTasks = cat.tasks.filter(t => t.done);
   if (!doneTasks.length) return;
+
+  const space = curSpace();
+  logH('-', `Cleared ${doneTasks.length} completed in "${trunc(cat.name)}"`, {
+    k: 'tasks_clear', sp: space.id,
+    items: doneTasks.map(t => ({ catId: cat.id, catName: cat.name, task: t })),
+  });
+  doneTasks.forEach(t => tombIfShared(space, t.id));
 
   const STAGGER = 75;   // мс между задачами
   const ANIM_DUR = 2000; // мс — длина одной анимации (совпадает с CSS)
@@ -468,16 +899,24 @@ function clearCompletedTasks(catId) {
   const totalTime = (doneTasks.length - 1) * STAGGER + ANIM_DUR;
   setTimeout(() => {
     cat.tasks = cat.tasks.filter(t => !t.done);
+    stamp(cat);
     render();
   }, totalTime);
 }
 
 function clearAllCompleted() {
+  const space = curSpace();
   const allDone = [];
-  state.categories.forEach(cat => {
+  space.categories.forEach(cat => {
     cat.tasks.filter(t => t.done).forEach(task => allDone.push({ cat, task }));
   });
   if (!allDone.length) return;
+
+  logH('-', `Cleared ${allDone.length} completed in "${trunc(space.name)}"`, {
+    k: 'tasks_clear', sp: space.id,
+    items: allDone.map(({ cat, task }) => ({ catId: cat.id, catName: cat.name, task })),
+  });
+  allDone.forEach(({ task }) => tombIfShared(space, task.id));
 
   const STAGGER = 75;
   const ANIM_DUR = 2000;
@@ -495,13 +934,13 @@ function clearAllCompleted() {
 
   const totalTime = (allDone.length - 1) * STAGGER + ANIM_DUR;
   setTimeout(() => {
-    state.categories.forEach(cat => { cat.tasks = cat.tasks.filter(t => !t.done); });
+    space.categories.forEach(cat => { cat.tasks = cat.tasks.filter(t => !t.done); stamp(cat); });
     render();
   }, totalTime);
 }
 
 function updateCategoryCount(catId) {
-  const cat = state.categories.find(c => c.id === catId);
+  const cat = cats().find(c => c.id === catId);
   if (!cat) return;
   const doneN = cat.tasks.filter(t => t.done).length;
   const catEl = document.querySelector(`.category[data-cat-id="${catId}"]`);
@@ -510,31 +949,87 @@ function updateCategoryCount(catId) {
     if (countEl) countEl.textContent = `${doneN}/${cat.tasks.length}`;
   }
 }
+
+function addCategory(name) {
+  cats().push({ id: 'c' + Date.now(), name, tasks: [], mt: Date.now() });
+  logH('+', `Added category "${trunc(name)}"`);
+  render();
+}
+
 function promptRenameCategory(catId) {
-  const cat = state.categories.find(c => c.id === catId);
-  if (cat) openDialog('Rename category', cat.name, val => { cat.name = val; render(); }, false);
+  const cat = cats().find(c => c.id === catId);
+  if (!cat) return;
+  openDialog('Rename category', cat.name, val => {
+    logH('~', `Renamed category "${trunc(cat.name, 20)}" → "${trunc(val, 20)}"`,
+      { k: 'cat_rename', sp: curSpace().id, catId, old: cat.name });
+    cat.name = val;
+    stamp(cat);
+    render();
+  }, false);
 }
+
 function deleteCategory(catId) {
-  state.categories = state.categories.filter(c => c.id !== catId); render();
+  const space = curSpace();
+  const idx = space.categories.findIndex(c => c.id === catId);
+  if (idx === -1) return;
+  const cat = space.categories[idx];
+  logH('-', `Deleted category "${trunc(cat.name)}" (${cat.tasks.length} tasks)`,
+    { k: 'cat_del', sp: space.id, index: idx, category: cat });
+  tombIfShared(space, catId);
+  space.categories.splice(idx, 1);
+  render();
 }
+
 function promptEditTask(catId, taskId) {
-  const task = state.categories.find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
-  if (task) openDialog('Edit task', task.text, val => { task.text = val; render(); }, true);
-}
-function deleteTask(catId, taskId) {
-  const cat = state.categories.find(c => c.id === catId);
-  if (cat) { cat.tasks = cat.tasks.filter(t => t.id !== taskId); render(); }
-}
-function promptAddTask(catId) {
-  openDialog('New task', '', val => {
-    const cat = state.categories.find(c => c.id === catId);
-    if (cat) { cat.tasks.push({ id: 't' + Date.now(), text: val, done: false }); render(); }
+  const task = cats().find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
+  if (!task) return;
+  openDialog('Edit task', task.text, val => {
+    logH('~', `Edited "${trunc(task.text, 20)}" → "${trunc(val, 20)}"`,
+      { k: 'task_edit', sp: curSpace().id, catId, taskId, old: task.text });
+    task.text = val;
+    stamp(task);
+    render();
   }, true);
 }
+
+function deleteTask(catId, taskId) {
+  const space = curSpace();
+  const cat = space.categories.find(c => c.id === catId);
+  const task = cat?.tasks.find(t => t.id === taskId);
+  if (!cat || !task) return;
+  logH('-', `Deleted "${trunc(task.text)}" from "${trunc(cat.name, 18)}"`,
+    { k: 'task_del', sp: space.id, catId, catName: cat.name, task });
+  tombIfShared(space, taskId);
+  cat.tasks = cat.tasks.filter(t => t.id !== taskId);
+  stamp(cat);
+  render();
+}
+
+function promptAddTask(catId) {
+  openDialog('New task', '', val => {
+    const cat = cats().find(c => c.id === catId);
+    if (!cat) return;
+    cat.tasks.push({ id: 't' + Date.now(), text: val, done: false, mt: Date.now() });
+    stamp(cat);
+    logH('+', `Added "${trunc(val)}" to "${trunc(cat.name, 18)}"`);
+    render();
+  }, true);
+}
+
+function clearSpace() {
+  const space = curSpace();
+  if (!space.categories.length) return;
+  logH('-', `Cleared the whole "${trunc(space.name)}" space`,
+    { k: 'space_wipe', sp: space.id, categories: space.categories });
+  space.categories.forEach(c => tombIfShared(space, c.id));
+  space.categories = [];
+  render();
+}
+
 function confirmClearAll() {
   closeDrawer();
-  setTimeout(() => openSheet('Clear everything?', [
-    { icon: '✕', label: 'Yes, delete all', danger: true, action: () => { state.categories = []; render(); } },
+  setTimeout(() => openSheet(`Clear "${trunc(curSpace().name, 20)}" space?`, [
+    { icon: '✕', label: 'Yes, delete all', danger: true, action: clearSpace },
     { icon: '←', label: 'Cancel', action: () => { } },
   ]), 300);
 }

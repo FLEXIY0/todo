@@ -340,6 +340,244 @@ body.theme-anthropic #main {
   border-bottom-color: var(--accent-dim);
 }
 
+/* ── Space tabs + page flip ─────────────────────────────────── */
+#spaceTabs {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  padding: 0 16px 12px;
+}
+
+.space-tab {
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 4px 2px;
+  border-bottom: 1px solid transparent;
+  transition: color .25s, border-color .25s;
+}
+
+.space-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent-dim);
+}
+
+#main {
+  perspective: 1500px;
+}
+
+.flip-page {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  transform-origin: left center;
+  background: var(--bg);
+  pointer-events: none;
+  will-change: transform, opacity;
+  box-shadow: 14px 0 36px rgba(0, 0, 0, .35);
+  padding-bottom: 24px;
+}
+
+.flip-page.anim {
+  transition: transform .45s cubic-bezier(.3, .9, .3, 1), opacity .45s ease;
+}
+
+/* ── Shared space bar ───────────────────────────────────────── */
+.shared-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 0 2px 14px;
+}
+
+.mode-chips {
+  display: flex;
+  gap: 8px;
+}
+
+.mode-chip {
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  padding: 5px 12px;
+  border: 1px solid var(--border-dim);
+  border-radius: 999px;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: color .2s, border-color .2s, background .2s;
+}
+
+.mode-chip.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-xs);
+}
+
+.sync-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sync-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.sync-dot.on { background: #3fb950; }
+.sync-dot.wait { background: #e8c43a; animation: syncPulse 1.2s ease infinite; }
+.sync-dot.err { background: var(--danger); }
+
+@keyframes syncPulse {
+  50% { opacity: .25; }
+}
+
+.sync-lbl {
+  font-size: 10px;
+  letter-spacing: .5px;
+  color: var(--text-dim);
+}
+
+.sync-btn {
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid var(--border-dim);
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: background .15s;
+}
+
+.sync-btn:active {
+  background: var(--accent-xs);
+}
+
+/* ── History screen ─────────────────────────────────────────── */
+.hist-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 2px 14px;
+}
+
+.hist-list {
+  padding-bottom: 10px;
+}
+
+.cl-time {
+  flex-shrink: 0;
+  width: 38px;
+  font-size: 10px;
+  color: var(--text-dim);
+  padding-top: 2px;
+}
+
+.cl-restore {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 0 6px;
+  font-size: 15px;
+  font-family: Arial, sans-serif;
+}
+
+.cl-restore:active {
+  opacity: .5;
+}
+
+.cl-line.done .cl-sign, .cl-line.done .cl-text { color: var(--accent); }
+.cl-line.undone .cl-sign, .cl-line.undone .cl-text { color: var(--text-dim); }
+.cl-line.res .cl-sign, .cl-line.res .cl-text { color: var(--diff-add); }
+
+/* ── Settings screen ────────────────────────────────────────── */
+.set-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 12px;
+  font-size: 14px;
+  color: var(--text);
+  border-bottom: 1px solid var(--border-dim);
+}
+
+.set-row:last-of-type {
+  border-bottom: none;
+}
+
+.set-name {
+  flex: 1;
+  word-break: break-word;
+}
+
+.set-act {
+  cursor: pointer;
+  padding: 2px 6px;
+  font-size: 14px;
+}
+
+.set-act:active {
+  opacity: .5;
+}
+
+.sw {
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid var(--border-dim);
+  background: var(--accent-xs);
+  position: relative;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color .2s;
+}
+
+.sw::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  transition: left .2s, background .2s;
+}
+
+.sw.on {
+  border-color: var(--accent);
+}
+
+.sw.on::after {
+  left: 16px;
+  background: var(--accent);
+}
+
+.empty-hint {
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  padding: 34px 0 8px;
+}
+
+.add-task-btn.center {
+  justify-content: center;
+  padding-top: 2px;
+}
+
 /* ── Categories – floating-label border ─────────────────────── */
 .categories {
   padding: 0 14px;
