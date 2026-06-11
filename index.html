@@ -39,8 +39,11 @@
     </div>
     <div class="drawer-spacer"></div>
     <div class="drawer-div"></div>
-    <div class="drawer-item" onclick="openChangelog()">
-      <span class="di-icon">±</span> What's new
+    <div class="drawer-item" onclick="openSettings()">
+      <span class="di-icon">⚙</span> Settings
+    </div>
+    <div class="drawer-item" onclick="openHistory()">
+      <span class="di-icon">±</span> History
     </div>
     <div class="drawer-item" onclick="openAbout()">
       <span class="di-icon">ⓘ</span> About
@@ -58,6 +61,7 @@
       <div class="app-title" id="appTitle" contenteditable="true" spellcheck="false" data-placeholder="Simple Todo">
       </div>
     </div>
+    <div id="spaceTabs"></div>
     <div class="categories" id="categoriesContainer"></div>
   </div>
 
@@ -84,8 +88,10 @@
   </div>
 
 
+  <script src="vendor/peerjs.min.js"></script>
   <script src="ui.js"></script>
   <script src="app.js"></script>
+  <script src="sync.js"></script>
 </body>
 
 </html>

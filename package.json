@@ -4,7 +4,7 @@
   "description": "",
   "main": "app.js",
   "scripts": {
-    "build": "mkdir -p www && cp index.html app.js styles.css ui.js www/",
+    "build": "mkdir -p www/vendor && cp index.html app.js styles.css ui.js sync.js www/ && cp vendor/peerjs.min.js www/vendor/",
     "sync": "npm run build && npx cap sync",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

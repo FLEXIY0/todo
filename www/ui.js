@@ -1,5 +1,5 @@
 // ── App meta ─────────────────────────────────────────────────
-const APP_VERSION = '1.1';
+const APP_VERSION = '1.2';
 const REPO_URL = 'https://github.com/FLEXIY0/todo';
 
 function openAbout() {
@@ -45,6 +45,8 @@ function overlayOpen()  {
 
 maskEl.addEventListener('click', () => closeDrawer());
 
+let pageDrag = 0, pageDragP = 0; // active page-flip swipe between spaces
+
 document.addEventListener('touchstart', (e) => {
   if (overlayOpen()) return;
   swTouchX = e.touches[0].clientX; swTouchY = e.touches[0].clientY;
@@ -59,11 +61,32 @@ document.addEventListener('touchmove', (e) => {
     swDir = Math.abs(dx) >= Math.abs(dy) ? 'h' : 'v';
   }
   if (swDir !== 'h') return;
-  if (!drawerOpen && swTouchX > 44 && dx > 0) return;
-  e.preventDefault(); swActive = true; applyOffset(swBase + dx, false);
+
+  // drawer: open state, or a rightward swipe from the left edge
+  if (drawerOpen || swActive || (swTouchX <= 44 && dx > 0 && !pageDrag)) {
+    e.preventDefault(); swActive = true; applyOffset(swBase + dx, false);
+    return;
+  }
+
+  // page flip between spaces (only on plain space screens)
+  if (subtaskView || historyView || settingsView) return;
+  if (!pageDrag) {
+    const dir = dx < 0 ? 1 : -1;
+    if (!flipDragStart(dir)) return;
+    pageDrag = dir;
+    pageDragP = 0;
+  }
+  e.preventDefault();
+  pageDragP = Math.min(1, Math.max(0, (pageDrag === 1 ? -dx : dx) / (window.innerWidth * 0.7)));
+  flipDragMove(pageDragP);
 }, { passive: false });
 
 document.addEventListener('touchend', (e) => {
+  if (pageDrag) {
+    flipDragEnd(pageDragP > 0.22);
+    pageDrag = 0; pageDragP = 0;
+    return;
+  }
   if (!swActive) return; swActive = false;
   const dx = e.changedTouches[0].clientX - swTouchX;
   drawerOpen ? (dx < -44 ? closeDrawer() : openDrawer()) : (dx > 44 ? openDrawer() : closeDrawer());
@@ -80,7 +103,7 @@ let epStartX = 0, epStartY = 0;
 function startEmptyPress(x, y) {
   epStartX = x; epStartY = y;
   emptyPressTimer = setTimeout(() => {
-    if (changelogView) return;
+    if (historyView || settingsView) return;
     navigator.vibrate && navigator.vibrate(30);
     if (subtaskView) {
       openSheet('', [
@@ -88,11 +111,9 @@ function startEmptyPress(x, y) {
       ]);
       return;
     }
-    const hasDone = state.categories.some(cat => cat.tasks.some(t => t.done));
+    const hasDone = cats().some(cat => cat.tasks.some(t => t.done));
     const items = [
-      { icon: '+', label: 'Add category', action: () => openDialog('New category', '', val => {
-          state.categories.push({ id: 'c' + Date.now(), name: val, tasks: [] }); render();
-        }, false) },
+      { icon: '+', label: 'Add category', action: () => openDialog('New category', '', val => addCategory(val), false) },
     ];
     if (hasDone) items.push({ icon: '✓', label: 'Clear all completed', action: clearAllCompleted });
     openSheet('', items);
@@ -143,7 +164,7 @@ document.getElementById('sheetOverlay').addEventListener('click', e => {
 });
 
 function openCategorySheet(catId) {
-  const cat = state.categories.find(c => c.id === catId);
+  const cat = cats().find(c => c.id === catId);
   if (!cat) return;
   const hasDone = cat.tasks.some(t => t.done);
   const items = [
@@ -158,7 +179,7 @@ function openCategorySheet(catId) {
   openSheet(cat.name, items);
 }
 function openTaskSheet(catId, taskId) {
-  const cat  = state.categories.find(c => c.id === catId);
+  const cat  = cats().find(c => c.id === catId);
   const task = cat?.tasks.find(t => t.id === taskId);
   if (!task) return;
   const lbl = task.text.length > 42 ? task.text.slice(0, 42) + '…' : task.text;
@@ -177,7 +198,7 @@ function openTaskSheet(catId, taskId) {
 }
 
 function openSubtaskSheet(catId, taskId, subId) {
-  const task = state.categories.find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
+  const task = cats().find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
   const sub  = task?.subtasks?.find(s => s.id === subId);
   if (!sub) return;
   const lbl = sub.text.length > 42 ? sub.text.slice(0, 42) + '…' : sub.text;
