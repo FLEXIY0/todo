@@ -16,8 +16,7 @@ function loadState() {
     if (saved.theme) {
       state.theme = saved.theme;
       document.body.className = 'theme-' + saved.theme;
-      document.getElementById('ti-classic').classList.toggle('active', saved.theme === 'classic');
-      document.getElementById('ti-oled').classList.toggle('active', saved.theme === 'oled');
+      THEME_IDS.forEach(n => document.getElementById('ti-' + n).classList.toggle('active', n === saved.theme));
     }
   } catch (e) { }
 }
@@ -52,11 +51,18 @@ const strikeForwardSet = new Set();
 const strikeReverseSet = new Set();
 const animTimers = {};
 let pressTimer = null;
+let subtaskView = null; // { catId, taskId } while inside a task's subtasks
 
 // ── Render ───────────────────────────────────────────────────
 function render() {
   const container = document.getElementById('categoriesContainer');
   container.innerHTML = '';
+
+  if (subtaskView) {
+    renderSubtasks(container);
+    saveState();
+    return;
+  }
 
   state.categories.forEach(cat => {
     const catEl = document.createElement('div');
@@ -84,8 +90,13 @@ function render() {
 
       el.className = cls;
       el.dataset.id = task.id;
-      el.innerHTML = `<div class="task-bullet"></div><div class="task-text"><span class="strike-wrap">${esc(task.text)}</span></div>`;
-      el.addEventListener('click', () => toggleTask(cat.id, task.id));
+      const subs = task.subtasks || [];
+      const bars = subs.length
+        ? `<div class="sub-bars">${subs.map(s => `<span class="sub-bar${s.done ? ' done' : ''}"></span>`).join('')}</div>`
+        : '';
+      el.innerHTML = `<div class="task-bullet"></div><div class="task-text"><span class="strike-wrap">${esc(task.text)}</span>${bars}</div>`;
+      // A task with subtasks opens its nested list; completion is automatic.
+      el.addEventListener('click', () => subs.length ? openSubtasks(cat.id, task.id) : toggleTask(cat.id, task.id));
       setupLongPress(el, () => openTaskSheet(cat.id, task.id));
       tasksEl.appendChild(el);
     });
@@ -100,6 +111,60 @@ function render() {
     container.appendChild(catEl);
   });
   saveState();
+}
+
+// Nested screen: one task's subtasks, framed like a category
+function renderSubtasks(container) {
+  const cat = state.categories.find(c => c.id === subtaskView.catId);
+  const task = cat?.tasks.find(t => t.id === subtaskView.taskId);
+  if (!task) { subtaskView = null; render(); return; }
+  const subs = task.subtasks = task.subtasks || [];
+
+  const back = document.createElement('div');
+  back.className = 'subtask-back';
+  back.innerHTML = `<span class="sb-arrow">←</span><span>${esc(cat.name)}</span>`;
+  back.addEventListener('click', closeSubtasks);
+  container.appendChild(back);
+
+  const catEl = document.createElement('div');
+  catEl.className = 'category subtask-view';
+  catEl.dataset.catId = cat.id;
+
+  const doneN = subs.filter(s => s.done).length;
+  const name = task.text.length > 28 ? task.text.slice(0, 28) + '…' : task.text;
+  const header = document.createElement('div');
+  header.className = 'category-header';
+  header.innerHTML = `<span class="cat-line"></span><span class="category-name">${esc(name)}</span><span class="cat-line-mid"></span><span class="category-count">${doneN}/${subs.length}</span><span class="cat-line"></span>`;
+  catEl.appendChild(header);
+
+  const tasksEl = document.createElement('div');
+  tasksEl.className = 'tasks';
+  subs.forEach(sub => {
+    const el = document.createElement('div');
+    const isFwd = strikeForwardSet.has(sub.id);
+    const isRev = strikeReverseSet.has(sub.id);
+
+    let cls = 'task-item';
+    if (sub.done || isRev) cls += ' done';
+    if (isFwd) cls += ' strike-fwd';
+    if (isRev) cls += ' strike-rev';
+
+    el.className = cls;
+    el.dataset.id = sub.id;
+    el.innerHTML = `<div class="task-bullet"></div><div class="task-text"><span class="strike-wrap">${esc(sub.text)}</span></div>`;
+    el.addEventListener('click', () => toggleSubtask(cat.id, task.id, sub.id));
+    setupLongPress(el, () => openSubtaskSheet(cat.id, task.id, sub.id));
+    tasksEl.appendChild(el);
+  });
+
+  const addBtn = document.createElement('div');
+  addBtn.className = 'add-task-btn';
+  addBtn.innerHTML = `<div class="add-task-icon">+</div><span>Add subtask</span>`;
+  addBtn.addEventListener('click', () => promptAddSubtask(cat.id, task.id));
+  tasksEl.appendChild(addBtn);
+
+  catEl.appendChild(tasksEl);
+  container.appendChild(catEl);
 }
 
 // ── Long Press ───────────────────────────────────────────────
@@ -123,31 +188,29 @@ function setupLongPress(el, cb) {
 }
 
 // ── Actions ──────────────────────────────────────────────────
-function toggleTask(catId, taskId) {
-  const task = state.categories.find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
-  if (!task) return;
-
+// Shared toggle + strike animation for tasks and subtasks
+function applyToggle(item, itemId, updateCount) {
   // Отменяем предыдущий таймер для этой задачи
-  if (animTimers[taskId]) {
-    clearTimeout(animTimers[taskId]);
-    delete animTimers[taskId];
+  if (animTimers[itemId]) {
+    clearTimeout(animTimers[itemId]);
+    delete animTimers[itemId];
   }
-  strikeForwardSet.delete(taskId);
-  strikeReverseSet.delete(taskId);
+  strikeForwardSet.delete(itemId);
+  strikeReverseSet.delete(itemId);
 
-  const el = document.querySelector(`.task-item[data-id="${taskId}"]`);
+  const el = document.querySelector(`.task-item[data-id="${itemId}"]`);
 
-  if (task.done) {
-    task.done = false;
-    strikeReverseSet.add(taskId);
+  if (item.done) {
+    item.done = false;
+    strikeReverseSet.add(itemId);
     if (el) {
       el.classList.remove('strike-fwd');
       void el.offsetWidth;
       el.classList.add('strike-rev');
     }
   } else {
-    task.done = true;
-    strikeForwardSet.add(taskId);
+    item.done = true;
+    strikeForwardSet.add(itemId);
     if (el) {
       el.classList.remove('strike-rev');
       el.classList.add('done');
@@ -156,19 +219,75 @@ function toggleTask(catId, taskId) {
     }
   }
   saveState();
-  updateCategoryCount(catId);
+  updateCount();
 
-  animTimers[taskId] = setTimeout(() => {
-    delete animTimers[taskId];
-    strikeForwardSet.delete(taskId);
-    strikeReverseSet.delete(taskId);
-    const el2 = document.querySelector(`.task-item[data-id="${taskId}"]`);
+  animTimers[itemId] = setTimeout(() => {
+    delete animTimers[itemId];
+    strikeForwardSet.delete(itemId);
+    strikeReverseSet.delete(itemId);
+    const el2 = document.querySelector(`.task-item[data-id="${itemId}"]`);
     if (el2) {
       el2.classList.remove('strike-fwd', 'strike-rev');
-      if (!task.done) el2.classList.remove('done');
+      if (!item.done) el2.classList.remove('done');
     }
-    updateCategoryCount(catId);
+    updateCount();
   }, 2100);
+}
+
+function toggleTask(catId, taskId) {
+  const task = state.categories.find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
+  if (!task) return;
+  if (task.subtasks && task.subtasks.length) { openSubtasks(catId, taskId); return; }
+  applyToggle(task, taskId, () => updateCategoryCount(catId));
+}
+
+function toggleSubtask(catId, taskId, subId) {
+  const task = state.categories.find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
+  const sub = task?.subtasks?.find(s => s.id === subId);
+  if (!sub) return;
+  applyToggle(sub, subId, updateSubtaskCount);
+  syncParentDone(task);
+  saveState();
+}
+
+// ── Subtasks ─────────────────────────────────────────────────
+function openSubtasks(catId, taskId) { subtaskView = { catId, taskId }; render(); }
+function closeSubtasks() { subtaskView = null; render(); }
+
+// A task with subtasks is done exactly when all of them are done
+function syncParentDone(task) {
+  if (task.subtasks && task.subtasks.length) task.done = task.subtasks.every(s => s.done);
+}
+
+function updateSubtaskCount() {
+  if (!subtaskView) return;
+  const task = state.categories.find(c => c.id === subtaskView.catId)?.tasks.find(t => t.id === subtaskView.taskId);
+  const countEl = document.querySelector('.category.subtask-view .category-count');
+  if (task && countEl) countEl.textContent = `${task.subtasks.filter(s => s.done).length}/${task.subtasks.length}`;
+}
+
+function promptAddSubtask(catId, taskId) {
+  openDialog('New subtask', '', val => {
+    const task = state.categories.find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
+    if (!task) return;
+    task.subtasks = task.subtasks || [];
+    task.subtasks.push({ id: 's' + Date.now(), text: val, done: false });
+    syncParentDone(task);
+    render();
+  }, true);
+}
+
+function promptEditSubtask(catId, taskId, subId) {
+  const sub = state.categories.find(c => c.id === catId)?.tasks.find(t => t.id === taskId)?.subtasks?.find(s => s.id === subId);
+  if (sub) openDialog('Edit subtask', sub.text, val => { sub.text = val; render(); }, true);
+}
+
+function deleteSubtask(catId, taskId, subId) {
+  const task = state.categories.find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
+  if (!task || !task.subtasks) return;
+  task.subtasks = task.subtasks.filter(s => s.id !== subId);
+  syncParentDone(task);
+  render();
 }
 
 function clearCompletedTasks(catId) {
