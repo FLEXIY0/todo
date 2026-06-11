@@ -1,9 +1,10 @@
 // ── Theme ────────────────────────────────────────────────────
+const THEME_IDS = ['classic', 'oled', 'anthropic'];
+
 function setTheme(t) {
   state.theme = t;
   document.body.className = 'theme-' + t;
-  document.getElementById('ti-classic').classList.toggle('active', t === 'classic');
-  document.getElementById('ti-oled').classList.toggle('active', t === 'oled');
+  THEME_IDS.forEach(n => document.getElementById('ti-' + n).classList.toggle('active', n === t));
   saveState();
   closeDrawer();
 }
@@ -54,7 +55,7 @@ document.addEventListener('touchend', (e) => {
 
 // ── Long press on empty space ─────────────────────────────────
 function isEmptySpace(el) {
-  return !el.closest('.task-item, .category-header, .add-task-btn, .add-category-btn, .add-category-wrap, .app-header, #drawer');
+  return !el.closest('.task-item, .category-header, .add-task-btn, .add-category-btn, .add-category-wrap, .app-header, .subtask-back, #drawer');
 }
 
 let emptyPressTimer = null;
@@ -64,6 +65,12 @@ function startEmptyPress(x, y) {
   epStartX = x; epStartY = y;
   emptyPressTimer = setTimeout(() => {
     navigator.vibrate && navigator.vibrate(30);
+    if (subtaskView) {
+      openSheet('', [
+        { icon: '+', label: 'Add subtask', action: () => promptAddSubtask(subtaskView.catId, subtaskView.taskId) },
+      ]);
+      return;
+    }
     const hasDone = state.categories.some(cat => cat.tasks.some(t => t.done));
     const items = [
       { icon: '+', label: 'Add category', action: () => openDialog('New category', '', val => {
@@ -138,10 +145,29 @@ function openTaskSheet(catId, taskId) {
   const task = cat?.tasks.find(t => t.id === taskId);
   if (!task) return;
   const lbl = task.text.length > 42 ? task.text.slice(0, 42) + '…' : task.text;
-  openSheet(lbl, [
-    { icon: task.done ? '○' : '✓', label: task.done ? 'Mark incomplete' : 'Mark complete', action: () => toggleTask(catId, taskId) },
+  const hasSubs = task.subtasks && task.subtasks.length;
+  const items = [];
+  // A task with subtasks completes automatically — no manual toggle for it.
+  if (!hasSubs) items.push(
+    { icon: task.done ? '○' : '✓', label: task.done ? 'Mark incomplete' : 'Mark complete', action: () => toggleTask(catId, taskId) }
+  );
+  items.push(
+    { icon: '≡', label: 'Subtasks', action: () => openSubtasks(catId, taskId) },
     { icon: '✏️', label: 'Edit task',   action: () => promptEditTask(catId, taskId) },
     { icon: '🗑️', label: 'Delete task', danger: true, action: () => deleteTask(catId, taskId) },
+  );
+  openSheet(lbl, items);
+}
+
+function openSubtaskSheet(catId, taskId, subId) {
+  const task = state.categories.find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
+  const sub  = task?.subtasks?.find(s => s.id === subId);
+  if (!sub) return;
+  const lbl = sub.text.length > 42 ? sub.text.slice(0, 42) + '…' : sub.text;
+  openSheet(lbl, [
+    { icon: sub.done ? '○' : '✓', label: sub.done ? 'Mark incomplete' : 'Mark complete', action: () => toggleSubtask(catId, taskId, subId) },
+    { icon: '✏️', label: 'Edit subtask',   action: () => promptEditSubtask(catId, taskId, subId) },
+    { icon: '🗑️', label: 'Delete subtask', danger: true, action: () => deleteSubtask(catId, taskId, subId) },
   ]);
 }
 
