@@ -1,5 +1,5 @@
 // ── App meta ─────────────────────────────────────────────────
-const APP_VERSION = '1.2';
+const APP_VERSION = '1.3';
 const REPO_URL = 'https://github.com/FLEXIY0/todo';
 
 function openAbout() {
@@ -12,6 +12,46 @@ function openAbout() {
         a.click();
       } },
   ]), 300);
+}
+
+// ── Toast ────────────────────────────────────────────────────
+let toastTimer = null;
+function toast(msg) {
+  let t = document.getElementById('toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'toast';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 1700);
+}
+
+// ── Hardware back gesture ────────────────────────────────────
+// A sentinel history entry absorbs the system back gesture: while any
+// layer is open, back closes it (like a cancel) instead of minimizing
+// the app. At the root the sentinel is gone and back exits as usual.
+let backArmed = false;
+function armBack() {
+  if (!backArmed) {
+    try { history.pushState({ st: 1 }, ''); backArmed = true; } catch (e) { }
+  }
+}
+window.addEventListener('popstate', () => {
+  backArmed = false;
+  if (closeTopLayer()) armBack(); // consumed — re-arm for the next back
+});
+function closeTopLayer() {
+  if (document.getElementById('dialogOverlay').classList.contains('active')) { closeDialog(); return true; }
+  if (document.getElementById('sheetOverlay').classList.contains('active')) { closeSheet(); return true; }
+  if (drawerOpen) { closeDrawer(); return true; }
+  if (subtaskView) { closeSubtasks(); return true; }
+  if (historyView) { closeHistory(); return true; }
+  if (settingsView) { closeSettings(); return true; }
+  if (spaceIndex > 0) { flipToSpace(0); return true; }
+  return false;
 }
 
 // ── Theme ────────────────────────────────────────────────────
@@ -36,7 +76,7 @@ function applyOffset(x, anim) {
   mainEl.classList.toggle('snap', !!anim);
   mainEl.style.transform = `translateX(${c}px)`;
 }
-function openDrawer(a)  { drawerOpen = true;  applyOffset(DRAWER_W, a !== false); maskEl.classList.add('active'); }
+function openDrawer(a)  { drawerOpen = true;  applyOffset(DRAWER_W, a !== false); maskEl.classList.add('active'); armBack(); }
 function closeDrawer(a) { drawerOpen = false; applyOffset(0, a !== false);        maskEl.classList.remove('active'); }
 function overlayOpen()  {
   return document.getElementById('sheetOverlay').classList.contains('active') ||
@@ -114,6 +154,7 @@ function startEmptyPress(x, y) {
     const hasDone = cats().some(cat => cat.tasks.some(t => t.done));
     const items = [
       { icon: '+', label: 'Add category', action: () => openDialog('New category', '', val => addCategory(val), false) },
+      { icon: '⧉', label: 'Export all to clipboard', action: exportSpaceAll },
     ];
     if (hasDone) items.push({ icon: '✓', label: 'Clear all completed', action: clearAllCompleted });
     openSheet('', items);
@@ -157,6 +198,7 @@ function openSheet(label, items) {
     c.appendChild(el);
   });
   document.getElementById('sheetOverlay').classList.add('active');
+  armBack();
 }
 function closeSheet() { document.getElementById('sheetOverlay').classList.remove('active'); }
 document.getElementById('sheetOverlay').addEventListener('click', e => {
@@ -169,6 +211,7 @@ function openCategorySheet(catId) {
   const hasDone = cat.tasks.some(t => t.done);
   const items = [
     { icon: '✏️', label: 'Rename category', action: () => promptRenameCategory(catId) },
+    { icon: '⧉', label: 'Copy as text', action: () => exportCategory(catId) },
   ];
   if (hasDone) items.push(
     { icon: '✓', label: 'Clear completed', action: () => clearCompletedTasks(catId) }
@@ -192,6 +235,7 @@ function openTaskSheet(catId, taskId) {
   items.push(
     { icon: '≡', label: 'Subtasks', action: () => openSubtasks(catId, taskId) },
     { icon: '✏️', label: 'Edit task',   action: () => promptEditTask(catId, taskId) },
+    { icon: '⧉', label: 'Copy as text', action: () => exportTask(catId, taskId) },
     { icon: '🗑️', label: 'Delete task', danger: true, action: () => deleteTask(catId, taskId) },
   );
   openSheet(lbl, items);
@@ -222,6 +266,7 @@ function openDialog(title, value, cb, isTask) {
   ta.style.display  = isTask ? 'block' : 'none';  ta.value  = isTask ? value : '';
   ht.style.display  = isTask ? 'block' : 'none';
   document.getElementById('dialogOverlay').classList.add('active');
+  armBack();
   setTimeout(() => (isTask ? ta : inp).focus(), 130);
 }
 function closeDialog() {

@@ -28,8 +28,8 @@ Pure vanilla JS/CSS — no frameworks, no bundler, no dependencies.
 - `sync.js` — P2P sync of the shared space over WebRTC (vendored PeerJS; the public broker only introduces peers)
 - `styles.css` — all styles including CSS keyframe animations
 
-**State model (v2):**
-`state` in `app.js` holds `{ theme, spaces[], settings, history[], sync }`. Each space has `{ id, name, categories[] }` (the shared one also `shared: true, mode`). Each category has `{ id, name, tasks[] }`; each task `{ id, text, done, mt }` plus optional `subtasks[]` (one level deep). `mt` is a last-modified timestamp used for sync merges. `loadState()` migrates the old v1 `{ categories }` shape into the first space. Persisted to localStorage (`todo_state`).
+**State model (v2/v3):**
+`state` in `app.js` holds `{ theme, spaces[], settings, history[], sync }`. Each space has `{ id, name, categories[], tree?, tabDot? }`; the shared one instead has `boards: { todo: [], wish: [] }` (two independent synced boards) with `mode` selecting the visible board — always access category lists via `spCats(space)`/`cats()`. Each category has `{ id, name, tasks[] }`; each task `{ id, text, done, mt }` plus optional `subtasks[]` (one level deep). `mt` is a last-modified timestamp used for sync merges. `loadState()` migrates v1 `{ categories }` and v2 shared-space shapes. Persisted to localStorage (`todo_state`). Subtasks render as stripes or a tree (`treeOn(space)`; per-space `tree` flag, shared follows its board).
 
 **Spaces / page flip:**
 `spaceIndex` indexes into `visSpaces()` (spaces filtered by `settings.wishlistOn/sharedOn`; the shared space is always last; `cats()` = current space's categories). Horizontal swipes drive a finger-controlled 3D page turn (`flipDragStart/Move/End` rotating a `.flip-page` layer around the left edge); `flipTo(dir, mutate)` is the programmatic variant used for the subtask/history/settings screens. Tabs in `#spaceTabs` jump via `flipToSpace()`.
@@ -38,7 +38,10 @@ Pure vanilla JS/CSS — no frameworks, no bundler, no dependencies.
 Every mutation calls `logH(sign, text, data?)` — entries with `data` are restorable via `restoreH()` (deleted/cleared items, text edits, wiped spaces). Retention is `settings.historyLimit` (50/200/1000/0=all), cycled from a chip on the history screen.
 
 **Shared space sync:**
-`sync.js` connects two devices through PeerJS (`ensurePeer`/`bindConn`); `saveState()` calls `maybeSync()` which debounces a full-snapshot send; `mergeShared()` does union + last-write-wins by `mt` with tombstones (`state.sync.tombs`) so deletions don't resurrect. `state.sync.server` may point at a self-hosted PeerServer. An echo loop is prevented by skipping sends whose payload equals the last one sent.
+`sync.js` links devices through a "room" (`state.sync.room = { id, key }`; invite code = `id.key`). Two channels: (1) direct P2P via PeerJS with peer ids derived from the room id (`st-<room>-a`/`-b` — deterministic rendezvous, no stored peer ids); (2) a minimal built-in MQTT-over-WebSocket client (QoS 0) publishing the AES-GCM-encrypted snapshot as a *retained* message to public brokers (`DEFAULT_BROKERS`, failover + backoff; `state.sync.brokers`/`state.sync.server` override for self-hosting/tests) — this is the async mailbox, so devices need not be online together. `saveState()` → `maybeSync()` debounces sends; `mergeBoards()` does union + last-write-wins by `mt` per board with tombstones (`state.sync.tombs`). Echo loops prevented by payload dedup + own-device id. Every sync event is journaled with the '⇄' sign.
+
+**Hardware back:**
+A sentinel `history.pushState` entry (`armBack()`/`closeTopLayer()` in `ui.js`) makes the system back gesture close the topmost layer (dialog → sheet → drawer → nested screen → return to first space) instead of exiting; at the root the app exits normally.
 
 **Subtasks:**
 A task with subtasks cannot be toggled manually — `syncParentDone()` keeps its `done` derived from its subtasks (done ⇔ all subtasks done). Tapping such a task opens the nested subtask screen (`subtaskView` in `app.js`, rendered by `renderSubtasks()`); on the main screen it shows one `.sub-bar` stripe per subtask under the text. The long-press sheet has a "Subtasks" item to enter the nested screen for any task.
