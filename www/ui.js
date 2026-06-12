@@ -155,6 +155,7 @@ function startEmptyPress(x, y) {
     const items = [
       { icon: '+', label: 'Add category', action: () => openDialog('New category', '', val => addCategory(val), false) },
       { icon: '⧉', label: 'Export all to clipboard', action: exportSpaceAll },
+      { icon: '⇪', label: 'Paste from clipboard', action: pasteFromClipboard },
     ];
     if (hasDone) items.push({ icon: '✓', label: 'Clear all completed', action: clearAllCompleted });
     openSheet('', items);

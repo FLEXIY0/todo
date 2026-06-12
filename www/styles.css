@@ -366,13 +366,6 @@ body.theme-anthropic .flip-content {
   border-bottom-color: var(--accent-dim);
 }
 
-.space-tab.dot {
-  font-size: 14px;
-  line-height: 10px;
-  letter-spacing: 0;
-  padding: 4px 6px;
-}
-
 #main {
   position: relative;
 }

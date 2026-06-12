@@ -241,14 +241,18 @@ function renderCurrentInto(container) {
 
 function renderTabs() {
   const el = document.getElementById('spaceTabs');
-  const hidden = subtaskView || historyView || settingsView;
+  const vis = visSpaces();
+  const shown = vis.filter(sp => !sp.tabDot);
+  // labels hidden per space; the row collapses entirely when none remain
+  const hidden = subtaskView || historyView || settingsView || !shown.length;
   el.style.display = hidden ? 'none' : 'flex';
   if (hidden) return;
   el.innerHTML = '';
-  visSpaces().forEach((sp, i) => {
+  vis.forEach((sp, i) => {
+    if (sp.tabDot) return;
     const t = document.createElement('div');
-    t.className = 'space-tab' + (i === spaceIndex ? ' active' : '') + (sp.tabDot ? ' dot' : '');
-    t.textContent = sp.tabDot ? '•' : sp.name;
+    t.className = 'space-tab' + (i === spaceIndex ? ' active' : '');
+    t.textContent = sp.name;
     t.addEventListener('click', () => flipToSpace(i));
     el.appendChild(t);
   });
@@ -480,7 +484,7 @@ function openSpaceSheet(spId) {
   });
   items.push({
     icon: '◦',
-    label: `Tab label: ${sp.tabDot ? 'hidden (dot)' : 'shown'} — tap to switch`,
+    label: `Tab label: ${sp.tabDot ? 'hidden' : 'shown'} — tap to switch`,
     action: () => {
       sp.tabDot = !sp.tabDot;
       logH('~', `"${trunc(sp.name)}" tab label ${sp.tabDot ? 'hidden' : 'shown'}`);
@@ -1143,6 +1147,74 @@ function exportSpaceAll() {
     (list.length ? list.map(mdCategory).join('\n\n') : '_empty_'));
   toast('Space copied to clipboard');
   logH('~', `Exported space "${trunc(sp.name)}"`);
+}
+
+// ── Import from clipboard ────────────────────────────────────
+// Lenient markdown-checklist parser: '## Name' starts a category,
+// '- [x] text' / '- text' / bare lines are tasks, indented ones are
+// subtasks of the task above. '# Title' (space heading) is skipped.
+let uidN = 0;
+function uid(p) { return p + Date.now().toString(36) + (uidN++).toString(36); }
+
+function parseChecklist(text) {
+  const out = [];
+  let cat = null, lastTask = null;
+  text.split(/\r?\n/).forEach(raw => {
+    const line = raw.trimEnd();
+    if (!line.trim()) return;
+    let m;
+    if ((m = line.match(/^(#{1,6})\s+(.+)/))) {
+      if (m[1].length === 1) return; // space title — ignore
+      cat = { id: uid('c'), name: m[2].trim(), tasks: [], mt: Date.now() };
+      out.push(cat);
+      lastTask = null;
+      return;
+    }
+    const isSub = /^(\s{2,}|\t)/.test(raw);
+    const tm = line.trim().match(/^[-*+]\s*(?:\[([ xX])\])?\s*(.*)$/);
+    const done = !!tm && (tm[1] || '').toLowerCase() === 'x';
+    const txt = (tm ? tm[2] : line.trim()).trim();
+    if (!txt) return;
+    if (isSub && lastTask) {
+      lastTask.subtasks = lastTask.subtasks || [];
+      lastTask.subtasks.push({ id: uid('s'), text: txt, done });
+      syncParentDone(lastTask);
+    } else {
+      if (!cat) {
+        cat = { id: uid('c'), name: 'Imported', tasks: [], mt: Date.now() };
+        out.push(cat);
+      }
+      lastTask = { id: uid('t'), text: txt, done, mt: Date.now() };
+      cat.tasks.push(lastTask);
+    }
+  });
+  return out.filter(c => c.tasks.length);
+}
+
+function pasteFromClipboard() {
+  const openEditor = initial => openDialog('Paste & edit, then save', initial, val => {
+    const imported = parseChecklist(val);
+    if (!imported.length) { toast('Nothing recognizable to import'); return; }
+    imported.forEach(c => cats().push(c));
+    const n = imported.reduce((a, c) => a + c.tasks.length, 0);
+    logH('+', `Imported ${imported.length} ${imported.length === 1 ? 'category' : 'categories'} (${n} tasks) from clipboard`);
+    toast(`Imported ${n} task${n === 1 ? '' : 's'}`);
+    render();
+  }, true);
+  if (navigator.clipboard && navigator.clipboard.readText) {
+    navigator.clipboard.readText().then(t => openEditor(t || '')).catch(() => openEditor(''));
+  } else openEditor('');
+}
+
+// ── Hardware back (Capacitor) ────────────────────────────────
+// The native back button/gesture closes layers like a cancel action;
+// at the root it minimizes the app. Web fallback: history sentinel in ui.js.
+if (window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.App) {
+  Capacitor.Plugins.App.addListener('backButton', () => {
+    if (closeTopLayer()) return;
+    const App = Capacitor.Plugins.App;
+    App.minimizeApp ? App.minimizeApp() : App.exitApp();
+  });
 }
 
 // ── Helpers + Init ───────────────────────────────────────────
