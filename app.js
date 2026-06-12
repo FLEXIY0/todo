@@ -24,8 +24,18 @@ function loadState() {
       state.spaces[0].categories = saved.categories;
     }
     if (!state.spaces.some(s => s.shared)) {
-      state.spaces.push({ id: 'sp_shared', name: 'Shared', shared: true, mode: 'todo', categories: [] });
+      state.spaces.push({ id: 'sp_shared', name: 'Shared', shared: true, mode: 'todo', boards: { todo: [], wish: [] } });
     }
+    // v2 → v3: the shared space now keeps two separate boards
+    state.spaces.forEach(sp => {
+      if (sp.shared && !sp.boards) {
+        sp.boards = { todo: [], wish: [] };
+        if (Array.isArray(sp.categories)) sp.boards[sp.mode === 'wish' ? 'wish' : 'todo'] = sp.categories;
+        delete sp.categories;
+      }
+      if (!sp.shared && !Array.isArray(sp.categories)) sp.categories = [];
+      if (sp.id === 'sp_wish' && sp.tree === undefined) sp.tree = true;
+    });
     if (saved.settings) Object.assign(state.settings, saved.settings);
     if (Array.isArray(saved.history)) state.history = saved.history;
     if (saved.sync) Object.assign(state.sync, saved.sync);
@@ -63,12 +73,12 @@ const state = {
         },
       ]
     },
-    { id: 'sp_wish', name: 'Wishlist', categories: [] },
-    { id: 'sp_shared', name: 'Shared', shared: true, mode: 'todo', categories: [] },
+    { id: 'sp_wish', name: 'Wishlist', categories: [], tree: true },
+    { id: 'sp_shared', name: 'Shared', shared: true, mode: 'todo', boards: { todo: [], wish: [] } },
   ],
   settings: { wishlistOn: true, sharedOn: true, historyLimit: 200 },
   history: [],
-  sync: { selfId: null, remoteId: null, tombs: {} },
+  sync: { room: null, tombs: {} },
 };
 
 let spaceIndex = 0;
@@ -92,9 +102,23 @@ function curSpace() {
   if (spaceIndex >= v.length) spaceIndex = Math.max(0, v.length - 1);
   return v[spaceIndex];
 }
-function cats() { return curSpace().categories; }
+function cats() { return spCats(curSpace()); }
+// a space's visible category list (the shared space has two boards)
+function spCats(sp, board) {
+  if (!sp.shared) return sp.categories;
+  sp.boards = sp.boards || { todo: [], wish: [] };
+  const b = board || sp.mode || 'todo';
+  return sp.boards[b] = sp.boards[b] || [];
+}
+// subtask display style: stripes or tree
+function treeOn(sp) { return sp.shared ? sp.mode === 'wish' : !!sp.tree; }
 function stamp(o) { o.mt = Date.now(); }
 function trunc(s, n = 30) { return s.length > n ? s.slice(0, n) + '…' : s; }
+// history data context: which space/board an entry belongs to
+function histCtx() {
+  const sp = curSpace();
+  return sp.shared ? { sp: sp.id, board: sp.mode } : { sp: sp.id };
+}
 // record a deletion tombstone so sync doesn't resurrect the item
 function tombIfShared(space, id) {
   if (space.shared) state.sync.tombs[id] = Date.now();
@@ -126,11 +150,12 @@ function restoreH(entryId) {
   if (!e || !e.d || e.used) return;
   const d = e.d;
   const sp = state.spaces.find(s => s.id === d.sp) || curSpace();
+  const arr = spCats(sp, d.board);
   const findCat = (catId, catName) => {
-    let c = sp.categories.find(x => x.id === catId);
+    let c = arr.find(x => x.id === catId);
     if (!c) {
       c = { id: catId || 'c' + Date.now(), name: catName || 'Restored', tasks: [], mt: Date.now() };
-      sp.categories.push(c);
+      arr.push(c);
     }
     return c;
   };
@@ -145,31 +170,31 @@ function restoreH(entryId) {
     case 'task_del': revive(findCat(d.catId, d.catName), d.task); break;
     case 'tasks_clear': d.items.forEach(it => revive(findCat(it.catId, it.catName), it.task)); break;
     case 'cat_del':
-      if (!sp.categories.some(c => c.id === d.category.id)) {
+      if (!arr.some(c => c.id === d.category.id)) {
         d.category.mt = Date.now();
         delete state.sync.tombs[d.category.id];
-        sp.categories.splice(Math.min(d.index, sp.categories.length), 0, d.category);
+        arr.splice(Math.min(d.index, arr.length), 0, d.category);
       }
       break;
     case 'task_edit': {
-      const t = sp.categories.find(c => c.id === d.catId)?.tasks.find(t => t.id === d.taskId);
+      const t = arr.find(c => c.id === d.catId)?.tasks.find(t => t.id === d.taskId);
       if (t) { t.text = d.old; stamp(t); }
       else revive(findCat(d.catId, d.catName), { id: d.taskId, text: d.old, done: false });
       break;
     }
     case 'cat_rename': {
-      const c = sp.categories.find(c => c.id === d.catId);
+      const c = arr.find(c => c.id === d.catId);
       if (c) { c.name = d.old; stamp(c); }
       break;
     }
     case 'sub_edit': {
-      const t = sp.categories.find(c => c.id === d.catId)?.tasks.find(t => t.id === d.taskId);
+      const t = arr.find(c => c.id === d.catId)?.tasks.find(t => t.id === d.taskId);
       const s = t?.subtasks?.find(s => s.id === d.subId);
       if (s) { s.text = d.old; stamp(t); }
       break;
     }
     case 'sub_del': {
-      const t = sp.categories.find(c => c.id === d.catId)?.tasks.find(t => t.id === d.taskId);
+      const t = arr.find(c => c.id === d.catId)?.tasks.find(t => t.id === d.taskId);
       if (t) {
         t.subtasks = t.subtasks || [];
         if (!t.subtasks.some(s => s.id === d.sub.id)) t.subtasks.push(d.sub);
@@ -180,10 +205,10 @@ function restoreH(entryId) {
     }
     case 'space_wipe':
       d.categories.forEach(c => {
-        if (!sp.categories.some(x => x.id === c.id)) {
+        if (!arr.some(x => x.id === c.id)) {
           c.mt = Date.now();
           delete state.sync.tombs[c.id];
-          sp.categories.push(c);
+          arr.push(c);
         }
       });
       break;
@@ -222,8 +247,8 @@ function renderTabs() {
   el.innerHTML = '';
   visSpaces().forEach((sp, i) => {
     const t = document.createElement('div');
-    t.className = 'space-tab' + (i === spaceIndex ? ' active' : '');
-    t.textContent = sp.name;
+    t.className = 'space-tab' + (i === spaceIndex ? ' active' : '') + (sp.tabDot ? ' dot' : '');
+    t.textContent = sp.tabDot ? '•' : sp.name;
     t.addEventListener('click', () => flipToSpace(i));
     el.appendChild(t);
   });
@@ -231,8 +256,10 @@ function renderTabs() {
 
 function renderSpace(container, space) {
   if (space.shared) container.appendChild(buildSharedBar(space));
+  const list = spCats(space);
+  const tree = treeOn(space);
 
-  space.categories.forEach(cat => {
+  list.forEach(cat => {
     const catEl = document.createElement('div');
     catEl.className = 'category';
     catEl.dataset.catId = cat.id;
@@ -259,10 +286,16 @@ function renderSpace(container, space) {
       el.className = cls;
       el.dataset.id = task.id;
       const subs = task.subtasks || [];
-      const bars = subs.length
-        ? `<div class="sub-bars">${subs.map(s => `<span class="sub-bar${s.done ? ' done' : ''}"></span>`).join('')}</div>`
-        : '';
-      el.innerHTML = `<div class="task-bullet"></div><div class="task-text"><span class="strike-wrap">${esc(task.text)}</span>${bars}</div>`;
+      let subsHtml = '';
+      if (subs.length) {
+        subsHtml = tree
+          // tree: the actual subtask texts, indented with branch glyphs
+          ? `<div class="sub-tree">${subs.map((s, i) =>
+              `<div class="sub-twig${s.done ? ' done' : ''}"><span class="tw-br">${i === subs.length - 1 ? '└' : '├'}</span><span class="tw-txt">${esc(s.text)}</span></div>`).join('')}</div>`
+          // stripes: one minimal bar per subtask
+          : `<div class="sub-bars">${subs.map(s => `<span class="sub-bar${s.done ? ' done' : ''}"></span>`).join('')}</div>`;
+      }
+      el.innerHTML = `<div class="task-bullet"></div><div class="task-text"><span class="strike-wrap">${esc(task.text)}</span>${subsHtml}</div>`;
       // A task with subtasks opens its nested list; completion is automatic.
       el.addEventListener('click', () => subs.length ? openSubtasks(cat.id, task.id) : toggleTask(cat.id, task.id));
       setupLongPress(el, () => openTaskSheet(cat.id, task.id));
@@ -279,10 +312,10 @@ function renderSpace(container, space) {
     container.appendChild(catEl);
   });
 
-  if (!space.categories.length) {
+  if (!list.length) {
     const hint = document.createElement('div');
     hint.className = 'empty-hint';
-    hint.textContent = space.shared ? 'Shared space is empty' : 'Nothing here yet';
+    hint.textContent = space.shared ? 'Shared board is empty' : 'Nothing here yet';
     container.appendChild(hint);
     const addBtn = document.createElement('div');
     addBtn.className = 'add-task-btn center';
@@ -292,7 +325,7 @@ function renderSpace(container, space) {
   }
 }
 
-// Shared space header: mode chips + sync controls
+// Shared space header: board chips (two separate synced boards) + sync row
 function buildSharedBar(space) {
   const bar = document.createElement('div');
   bar.className = 'shared-bar';
@@ -303,36 +336,26 @@ function buildSharedBar(space) {
     const chip = document.createElement('div');
     chip.className = 'mode-chip' + (space.mode === m ? ' active' : '');
     chip.textContent = label;
-    chip.addEventListener('click', () => setSharedMode(m));
+    chip.addEventListener('click', () => setSharedBoard(m));
     chips.appendChild(chip);
   });
   bar.appendChild(chips);
 
   const row = document.createElement('div');
-  row.className = 'sync-row';
+  row.className = 'sync-row tappable';
   const st = typeof syncState !== 'undefined' ? syncState : 'off';
-  const lbl = { off: 'Not connected', wait: 'Connecting…', on: 'Connected', err: 'Error' }[st];
-  row.innerHTML = `<span class="sync-dot ${st}" id="syncDot"></span><span class="sync-lbl" id="syncLabel">${lbl}</span>`;
-  const inviteBtn = document.createElement('span');
-  inviteBtn.className = 'sync-btn';
-  inviteBtn.textContent = 'Invite';
-  inviteBtn.addEventListener('click', () => startInvite());
-  const joinBtn = document.createElement('span');
-  joinBtn.className = 'sync-btn';
-  joinBtn.textContent = 'Join';
-  joinBtn.addEventListener('click', () => joinShared());
-  row.appendChild(inviteBtn);
-  row.appendChild(joinBtn);
+  row.innerHTML = `<span class="sync-dot ${st}" id="syncDot"></span><span class="sync-lbl" id="syncLabel">…</span><span class="sync-more">⋯</span>`;
+  row.addEventListener('click', () => openSyncSheet());
   bar.appendChild(row);
+  setTimeout(() => { if (typeof setSyncUI === 'function') setSyncUI(); }, 0);
   return bar;
 }
 
-function setSharedMode(m) {
+// switch which shared board is visible (each board has its own content)
+function setSharedBoard(m) {
   const sp = state.spaces.find(s => s.shared);
   if (!sp || sp.mode === m) return;
   sp.mode = m;
-  sp.modeMt = Date.now();
-  logH('~', `Shared space mode → ${m === 'todo' ? 'To-Do' : 'Wishlist'}`);
   render();
 }
 
@@ -363,7 +386,7 @@ function renderHistory(container) {
     return;
   }
 
-  const signCls = { '+': 'add', '-': 'del', '~': 'mod', '✓': 'done', '○': 'undone', '↩': 'res' };
+  const signCls = { '+': 'add', '-': 'del', '~': 'mod', '✓': 'done', '○': 'undone', '↩': 'res', '⇄': 'sync' };
   const list = document.createElement('div');
   list.className = 'category hist-list';
   state.history.slice(0, 400).forEach(h => {
@@ -392,6 +415,7 @@ function fmtTs(ts) {
 
 function openHistory() {
   closeDrawer();
+  armBack();
   setTimeout(() => flipTo(1, () => { historyView = true; settingsView = false; subtaskView = null; }), 260);
 }
 function closeHistory() { flipTo(-1, () => { historyView = false; }); }
@@ -413,35 +437,13 @@ function renderSettings(container) {
   state.spaces.forEach(sp => {
     const row = document.createElement('div');
     row.className = 'set-row';
-    const name = document.createElement('span');
-    name.className = 'set-name';
-    name.textContent = sp.name + (sp.shared ? ' · shared' : '');
-    row.appendChild(name);
-
-    const ren = document.createElement('span');
-    ren.className = 'set-act';
-    ren.textContent = '✏️';
-    ren.addEventListener('click', () => promptRenameSpace(sp.id));
-    row.appendChild(ren);
-
-    if (sp.id === 'sp_wish' || sp.shared) {
-      const key = sp.shared ? 'sharedOn' : 'wishlistOn';
-      const sw = document.createElement('div');
-      sw.className = 'sw' + (state.settings[key] ? ' on' : '');
-      sw.addEventListener('click', () => {
-        state.settings[key] = !state.settings[key];
-        logH('~', `${sp.name} space ${state.settings[key] ? 'enabled' : 'disabled'}`);
-        spaceIndex = 0;
-        render();
-      });
-      row.appendChild(sw);
-    } else if (sp.id !== 'sp_todo') {
-      const del = document.createElement('span');
-      del.className = 'set-act danger';
-      del.textContent = '🗑️';
-      del.addEventListener('click', () => deleteSpace(sp.id));
-      row.appendChild(del);
-    }
+    const hints = [];
+    if (sp.shared) hints.push('shared');
+    if (treeOn(sp) && !sp.shared) hints.push('tree');
+    if (sp.tabDot) hints.push('no label');
+    if ((sp.id === 'sp_wish' && !state.settings.wishlistOn) || (sp.shared && !state.settings.sharedOn)) hints.push('off');
+    row.innerHTML = `<span class="set-name">${esc(sp.name)}${hints.length ? `<span class="set-hint"> · ${hints.join(' · ')}</span>` : ''}</span><span class="set-act">›</span>`;
+    row.addEventListener('click', () => openSpaceSheet(sp.id));
     list.appendChild(row);
   });
 
@@ -458,6 +460,50 @@ function renderSettings(container) {
 
   frame.appendChild(list);
   container.appendChild(frame);
+}
+
+// Per-space options: rename, subtask style, tab label, enable, delete
+function openSpaceSheet(spId) {
+  const sp = state.spaces.find(s => s.id === spId);
+  if (!sp) return;
+  const items = [
+    { icon: '✏️', label: 'Rename space', action: () => promptRenameSpace(spId) },
+  ];
+  if (!sp.shared) items.push({
+    icon: '∴',
+    label: `Subtasks: ${sp.tree ? 'tree' : 'stripes'} — tap to switch`,
+    action: () => {
+      sp.tree = !sp.tree;
+      logH('~', `"${trunc(sp.name)}" subtasks → ${sp.tree ? 'tree' : 'stripes'}`);
+      render();
+    },
+  });
+  items.push({
+    icon: '◦',
+    label: `Tab label: ${sp.tabDot ? 'hidden (dot)' : 'shown'} — tap to switch`,
+    action: () => {
+      sp.tabDot = !sp.tabDot;
+      logH('~', `"${trunc(sp.name)}" tab label ${sp.tabDot ? 'hidden' : 'shown'}`);
+      render();
+    },
+  });
+  if (sp.id === 'sp_wish' || sp.shared) {
+    const key = sp.shared ? 'sharedOn' : 'wishlistOn';
+    items.push({
+      icon: '⏻',
+      label: state.settings[key] ? 'Disable this space' : 'Enable this space',
+      action: () => {
+        state.settings[key] = !state.settings[key];
+        logH('~', `${sp.name} space ${state.settings[key] ? 'enabled' : 'disabled'}`);
+        spaceIndex = 0;
+        render();
+      },
+    });
+  }
+  if (sp.id !== 'sp_todo' && sp.id !== 'sp_wish' && !sp.shared) {
+    items.push({ icon: '🗑️', label: 'Delete space', danger: true, action: () => deleteSpace(spId) });
+  }
+  openSheet(sp.name, items);
 }
 
 function promptRenameSpace(spId) {
@@ -487,6 +533,7 @@ function deleteSpace(spId) {
 
 function openSettings() {
   closeDrawer();
+  armBack();
   setTimeout(() => flipTo(1, () => { settingsView = true; historyView = false; subtaskView = null; }), 260);
 }
 function closeSettings() { flipTo(-1, () => { settingsView = false; }); }
@@ -593,6 +640,7 @@ function flipDragEnd(commit) {
   const f = flip;
   tweenPeel(f.p, commit ? 1 : 0, () => {
     if (!commit) { spaceIndex = f.prevIndex; render(); }
+    else if (spaceIndex > 0) armBack(); // hardware back returns to the first space
     f.layer.remove();
     flip = null;
   });
@@ -841,7 +889,7 @@ function toggleSubtask(catId, taskId, subId) {
 }
 
 // ── Subtasks ─────────────────────────────────────────────────
-function openSubtasks(catId, taskId) { flipTo(1, () => { subtaskView = { catId, taskId }; }); }
+function openSubtasks(catId, taskId) { armBack(); flipTo(1, () => { subtaskView = { catId, taskId }; }); }
 function closeSubtasks() { flipTo(-1, () => { subtaskView = null; }); }
 
 // A task with subtasks is done exactly when all of them are done
@@ -875,7 +923,7 @@ function promptEditSubtask(catId, taskId, subId) {
   if (!sub) return;
   openDialog('Edit subtask', sub.text, val => {
     logH('~', `Edited subtask "${trunc(sub.text, 20)}" → "${trunc(val, 20)}"`,
-      { k: 'sub_edit', sp: curSpace().id, catId, taskId, subId, old: sub.text });
+      Object.assign({ k: 'sub_edit', catId, taskId, subId, old: sub.text }, histCtx()));
     sub.text = val;
     stamp(task);
     render();
@@ -887,7 +935,7 @@ function deleteSubtask(catId, taskId, subId) {
   if (!task || !task.subtasks) return;
   const sub = task.subtasks.find(s => s.id === subId);
   if (sub) logH('-', `Deleted subtask "${trunc(sub.text)}"`,
-    { k: 'sub_del', sp: curSpace().id, catId, taskId, sub });
+    Object.assign({ k: 'sub_del', catId, taskId, sub }, histCtx()));
   task.subtasks = task.subtasks.filter(s => s.id !== subId);
   syncParentDone(task);
   stamp(task);
@@ -903,10 +951,10 @@ function clearCompletedTasks(catId) {
   if (!doneTasks.length) return;
 
   const space = curSpace();
-  logH('-', `Cleared ${doneTasks.length} completed in "${trunc(cat.name)}"`, {
-    k: 'tasks_clear', sp: space.id,
+  logH('-', `Cleared ${doneTasks.length} completed in "${trunc(cat.name)}"`, Object.assign({
+    k: 'tasks_clear',
     items: doneTasks.map(t => ({ catId: cat.id, catName: cat.name, task: t })),
-  });
+  }, histCtx()));
   doneTasks.forEach(t => tombIfShared(space, t.id));
 
   const STAGGER = 75;   // мс между задачами
@@ -935,15 +983,15 @@ function clearCompletedTasks(catId) {
 function clearAllCompleted() {
   const space = curSpace();
   const allDone = [];
-  space.categories.forEach(cat => {
+  cats().forEach(cat => {
     cat.tasks.filter(t => t.done).forEach(task => allDone.push({ cat, task }));
   });
   if (!allDone.length) return;
 
-  logH('-', `Cleared ${allDone.length} completed in "${trunc(space.name)}"`, {
-    k: 'tasks_clear', sp: space.id,
+  logH('-', `Cleared ${allDone.length} completed in "${trunc(space.name)}"`, Object.assign({
+    k: 'tasks_clear',
     items: allDone.map(({ cat, task }) => ({ catId: cat.id, catName: cat.name, task })),
-  });
+  }, histCtx()));
   allDone.forEach(({ task }) => tombIfShared(space, task.id));
 
   const STAGGER = 75;
@@ -962,7 +1010,7 @@ function clearAllCompleted() {
 
   const totalTime = (allDone.length - 1) * STAGGER + ANIM_DUR;
   setTimeout(() => {
-    space.categories.forEach(cat => { cat.tasks = cat.tasks.filter(t => !t.done); stamp(cat); });
+    spCats(space).forEach(cat => { cat.tasks = cat.tasks.filter(t => !t.done); stamp(cat); });
     render();
   }, totalTime);
 }
@@ -989,7 +1037,7 @@ function promptRenameCategory(catId) {
   if (!cat) return;
   openDialog('Rename category', cat.name, val => {
     logH('~', `Renamed category "${trunc(cat.name, 20)}" → "${trunc(val, 20)}"`,
-      { k: 'cat_rename', sp: curSpace().id, catId, old: cat.name });
+      Object.assign({ k: 'cat_rename', catId, old: cat.name }, histCtx()));
     cat.name = val;
     stamp(cat);
     render();
@@ -998,13 +1046,14 @@ function promptRenameCategory(catId) {
 
 function deleteCategory(catId) {
   const space = curSpace();
-  const idx = space.categories.findIndex(c => c.id === catId);
+  const list = spCats(space);
+  const idx = list.findIndex(c => c.id === catId);
   if (idx === -1) return;
-  const cat = space.categories[idx];
+  const cat = list[idx];
   logH('-', `Deleted category "${trunc(cat.name)}" (${cat.tasks.length} tasks)`,
-    { k: 'cat_del', sp: space.id, index: idx, category: cat });
+    Object.assign({ k: 'cat_del', index: idx, category: cat }, histCtx()));
   tombIfShared(space, catId);
-  space.categories.splice(idx, 1);
+  list.splice(idx, 1);
   render();
 }
 
@@ -1013,7 +1062,7 @@ function promptEditTask(catId, taskId) {
   if (!task) return;
   openDialog('Edit task', task.text, val => {
     logH('~', `Edited "${trunc(task.text, 20)}" → "${trunc(val, 20)}"`,
-      { k: 'task_edit', sp: curSpace().id, catId, taskId, old: task.text });
+      Object.assign({ k: 'task_edit', catId, taskId, old: task.text }, histCtx()));
     task.text = val;
     stamp(task);
     render();
@@ -1022,11 +1071,11 @@ function promptEditTask(catId, taskId) {
 
 function deleteTask(catId, taskId) {
   const space = curSpace();
-  const cat = space.categories.find(c => c.id === catId);
+  const cat = spCats(space).find(c => c.id === catId);
   const task = cat?.tasks.find(t => t.id === taskId);
   if (!cat || !task) return;
   logH('-', `Deleted "${trunc(task.text)}" from "${trunc(cat.name, 18)}"`,
-    { k: 'task_del', sp: space.id, catId, catName: cat.name, task });
+    Object.assign({ k: 'task_del', catId, catName: cat.name, task }, histCtx()));
   tombIfShared(space, taskId);
   cat.tasks = cat.tasks.filter(t => t.id !== taskId);
   stamp(cat);
@@ -1046,11 +1095,13 @@ function promptAddTask(catId) {
 
 function clearSpace() {
   const space = curSpace();
-  if (!space.categories.length) return;
-  logH('-', `Cleared the whole "${trunc(space.name)}" space`,
-    { k: 'space_wipe', sp: space.id, categories: space.categories });
-  space.categories.forEach(c => tombIfShared(space, c.id));
-  space.categories = [];
+  const list = spCats(space);
+  if (!list.length) return;
+  logH('-', `Cleared the whole "${trunc(space.name)}"${space.shared ? ' · ' + space.mode + ' board' : ''}`,
+    Object.assign({ k: 'space_wipe', categories: list }, histCtx()));
+  list.forEach(c => tombIfShared(space, c.id));
+  if (space.shared) space.boards[space.mode] = [];
+  else space.categories = [];
   render();
 }
 
@@ -1060,6 +1111,38 @@ function confirmClearAll() {
     { icon: '✕', label: 'Yes, delete all', danger: true, action: clearSpace },
     { icon: '←', label: 'Cancel', action: () => { } },
   ]), 300);
+}
+
+// ── Export to clipboard (markdown checklist) ─────────────────
+function mdTask(t) {
+  let s = `- [${t.done ? 'x' : ' '}] ${t.text}`;
+  (t.subtasks || []).forEach(st => { s += `\n  - [${st.done ? 'x' : ' '}] ${st.text}`; });
+  return s;
+}
+function mdCategory(cat) {
+  return `## ${cat.name}\n` + (cat.tasks.length ? cat.tasks.map(mdTask).join('\n') : '_empty_');
+}
+function exportTask(catId, taskId) {
+  const task = cats().find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
+  if (!task) return;
+  copyText(mdTask(task));
+  toast('Task copied to clipboard');
+  logH('~', `Exported task "${trunc(task.text)}"`);
+}
+function exportCategory(catId) {
+  const cat = cats().find(c => c.id === catId);
+  if (!cat) return;
+  copyText(mdCategory(cat));
+  toast('Category copied to clipboard');
+  logH('~', `Exported category "${trunc(cat.name)}"`);
+}
+function exportSpaceAll() {
+  const sp = curSpace();
+  const list = cats();
+  copyText(`# ${sp.name}${sp.shared ? ' · ' + (sp.mode === 'wish' ? 'Wishlist' : 'To-Do') : ''}\n\n` +
+    (list.length ? list.map(mdCategory).join('\n\n') : '_empty_'));
+  toast('Space copied to clipboard');
+  logH('~', `Exported space "${trunc(sp.name)}"`);
 }
 
 // ── Helpers + Init ───────────────────────────────────────────

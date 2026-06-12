@@ -366,6 +366,13 @@ body.theme-anthropic .flip-content {
   border-bottom-color: var(--accent-dim);
 }
 
+.space-tab.dot {
+  font-size: 14px;
+  line-height: 10px;
+  letter-spacing: 0;
+  padding: 4px 6px;
+}
+
 #main {
   position: relative;
 }
@@ -488,6 +495,29 @@ body.theme-anthropic .flip-content {
   background: var(--accent-xs);
 }
 
+.sync-row.tappable {
+  cursor: pointer;
+  border: 1px solid var(--border-dim);
+  border-radius: 999px;
+  padding: 5px 12px;
+  transition: background .15s;
+}
+
+.sync-row.tappable:active {
+  background: var(--accent-xs);
+}
+
+.sync-more {
+  color: var(--accent-dim);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.cl-line.sync .cl-sign,
+.cl-line.sync .cl-text {
+  color: var(--text-dim);
+}
+
 /* ── History screen ─────────────────────────────────────────── */
 .hist-bar {
   display: flex;
@@ -542,9 +572,23 @@ body.theme-anthropic .flip-content {
   border-bottom: none;
 }
 
+.set-row {
+  cursor: pointer;
+  transition: background .12s;
+}
+
+.set-row:active {
+  background: var(--accent-xs);
+}
+
 .set-name {
   flex: 1;
   word-break: break-word;
+}
+
+.set-hint {
+  font-size: 11px;
+  color: var(--text-dim);
 }
 
 .set-act {
@@ -602,6 +646,30 @@ body.theme-anthropic .flip-content {
 .add-task-btn.center {
   justify-content: center;
   padding-top: 2px;
+}
+
+/* ── Toast ──────────────────────────────────────────────────── */
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: 36px;
+  transform: translateX(-50%) translateY(16px);
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
+  letter-spacing: .5px;
+  padding: 9px 18px;
+  border-radius: 999px;
+  z-index: 400;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .25s, transform .25s;
+}
+
+#toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 
 /* ── Categories – floating-label border ─────────────────────── */
@@ -801,6 +869,39 @@ body.theme-anthropic .flip-content {
 
 .task-item.done .sub-bar.done {
   background: var(--accent-dim);
+}
+
+/* tree display of subtasks (wishlist-style) */
+.sub-tree {
+  margin-top: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sub-twig {
+  display: flex;
+  gap: 8px;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.tw-br {
+  color: var(--accent-dim);
+  font-family: 'Courier New', Courier, monospace;
+  flex-shrink: 0;
+}
+
+.tw-txt {
+  color: var(--text);
+  opacity: .8;
+  word-break: break-word;
+}
+
+.sub-twig.done .tw-txt {
+  text-decoration: line-through;
+  color: var(--text-dim);
+  opacity: 1;
 }
 
 .subtask-back {
