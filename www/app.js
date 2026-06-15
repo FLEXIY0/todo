@@ -655,6 +655,31 @@ function flipToSpace(i) {
   if (flipDragStart(i > spaceIndex ? 1 : -1, i)) flipDragEnd(true);
 }
 
+// Finger-driven "back" peel out of a nested screen (subtask/history/settings).
+// A rightward swipe turns the nested page away like the space flip, landing
+// back on the space it was opened from. Mirrors closeSubtasks/History/Settings.
+function flipBackDragStart() {
+  if (flip || subtaskView === null && !historyView && !settingsView) return false;
+  let restore;
+  if (subtaskView) { const v = subtaskView; restore = () => { subtaskView = v; }; subtaskView = null; }
+  else if (historyView) { restore = () => { historyView = true; }; historyView = false; }
+  else if (settingsView) { restore = () => { settingsView = true; }; settingsView = false; }
+  else return false;
+  buildPeelLayer(-1);
+  flip.backRestore = restore;
+  render(); // the space is now live underneath the peeling nested snapshot
+  return true;
+}
+function flipBackDragEnd(commit) {
+  if (!flip) return;
+  const f = flip;
+  tweenPeel(f.p, commit ? 1 : 0, () => {
+    if (!commit && f.backRestore) { f.backRestore(); render(); }
+    f.layer.remove();
+    flip = null;
+  });
+}
+
 // Programmatic peel for nested screens (subtasks, history, settings)
 function flipTo(dir, mutate) {
   if (flip) { mutate(); render(); return; }
