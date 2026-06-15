@@ -12,41 +12,10 @@
 
   <!-- DRAWER -->
   <div id="drawer">
-    <div class="drawer-section">Themes</div>
-    <div class="theme-item active" id="ti-classic" onclick="setTheme('classic')">
-      <div class="theme-dot classic"></div>
-      <div class="theme-info">
-        <div class="theme-name">Classic</div>
-        <div class="theme-sub">Amber · Dark</div>
-      </div>
-      <div class="theme-check"></div>
+    <div class="drawer-section">Menu</div>
+    <div class="drawer-item" onclick="openThemes()">
+      <span class="di-icon">◐</span> Themes
     </div>
-    <div class="theme-item" id="ti-oled" onclick="setTheme('oled')">
-      <div class="theme-dot oled"></div>
-      <div class="theme-info">
-        <div class="theme-name">OLED</div>
-        <div class="theme-sub">Black · White</div>
-      </div>
-      <div class="theme-check"></div>
-    </div>
-    <div class="theme-item" id="ti-anthropic" onclick="setTheme('anthropic')">
-      <div class="theme-dot anthropic"></div>
-      <div class="theme-info">
-        <div class="theme-name">Anthropic</div>
-        <div class="theme-sub">Ivory · Terracotta</div>
-      </div>
-      <div class="theme-check"></div>
-    </div>
-    <div class="theme-item" id="ti-anthropic-dark" onclick="setTheme('anthropic-dark')">
-      <div class="theme-dot anthropic-dark"></div>
-      <div class="theme-info">
-        <div class="theme-name">Anthropic Dark</div>
-        <div class="theme-sub">Antique · Dark</div>
-      </div>
-      <div class="theme-check"></div>
-    </div>
-    <div class="drawer-spacer"></div>
-    <div class="drawer-div"></div>
     <div class="drawer-item" onclick="openSettings()">
       <span class="di-icon">⚙</span> Settings
     </div>
@@ -56,6 +25,7 @@
     <div class="drawer-item" onclick="openAbout()">
       <span class="di-icon">ⓘ</span> About
     </div>
+    <div class="drawer-spacer"></div>
     <div class="drawer-div"></div>
     <div class="drawer-clear" onclick="confirmClearAll()">
       <span class="dc-icon">✕</span> Clear All
@@ -85,8 +55,8 @@
   <div class="dialog-overlay" id="dialogOverlay">
     <div class="dialog">
       <div class="dialog-title" id="dialogTitle">Rename</div>
-      <input type="text" id="dialogInput" placeholder="Category name…" />
-      <textarea id="dialogTextarea" placeholder="Describe your task…" style="display:none"></textarea>
+      <input type="text" id="dialogInput" placeholder="Category name…" spellcheck="true" autocapitalize="sentences" />
+      <textarea id="dialogTextarea" placeholder="Describe your task…" spellcheck="true" autocapitalize="sentences" autocorrect="on" style="display:none"></textarea>
       <div class="dialog-hint" id="dialogHint" style="display:none">Ctrl + Enter to save</div>
       <div class="dialog-buttons">
         <button class="d-btn cancel" onclick="closeDialog()">Cancel</button>

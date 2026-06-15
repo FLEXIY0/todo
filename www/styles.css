@@ -12,6 +12,9 @@
   --danger: #e05050;
   --diff-add: #3fb950;
   --diff-del: #f85149;
+  --font-scale: 1;            /* set by Settings → Fonts → Text size */
+  --app-font: Arial, Helvetica, sans-serif;
+  --cat-bw: 3px;             /* category frame line thickness (was 1px) */
 }
 
 body.theme-oled {
@@ -68,7 +71,7 @@ body.theme-anthropic-dark {
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: Arial, sans-serif;
+  font-family: var(--app-font, Arial, sans-serif);
   overflow-x: hidden;
 }
 
@@ -635,6 +638,30 @@ body.theme-anthropic-dark .flip-content {
   color: var(--text-dim);
 }
 
+.set-row.chips {
+  cursor: default;
+  flex-wrap: wrap;
+}
+
+.set-row.chips:active {
+  background: transparent;
+}
+
+.chip-group {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* theme picker reused inside the nested Themes screen */
+.theme-list .theme-item {
+  padding: 12px 8px;
+}
+
+.theme-list .theme-item:last-child {
+  border-bottom: none;
+}
+
 .set-act {
   cursor: pointer;
   padding: 2px 6px;
@@ -727,7 +754,7 @@ body.theme-anthropic-dark .flip-content {
 
 .category {
   border-top: none;
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--cat-bw) solid var(--border);
   background: transparent;
   position: relative;
   padding-top: 18px;
@@ -742,8 +769,8 @@ body.theme-anthropic-dark .flip-content {
   left: 0;
   right: 0;
   height: 8px;
-  border-left: 1px solid var(--border);
-  border-right: 1px solid var(--border);
+  border-left: var(--cat-bw) solid var(--border);
+  border-right: var(--cat-bw) solid var(--border);
   pointer-events: none;
 }
 
@@ -768,7 +795,7 @@ body.theme-anthropic-dark .flip-content {
 }
 
 .cat-line {
-  height: 1px;
+  height: var(--cat-bw);
   background: var(--border);
   flex-shrink: 0;
   width: 8px;
@@ -776,12 +803,12 @@ body.theme-anthropic-dark .flip-content {
 
 .cat-line-mid {
   flex: 1;
-  height: 1px;
+  height: var(--cat-bw);
   background: var(--border);
 }
 
 .category-name {
-  font-size: 11px;
+  font-size: calc(12px * var(--font-scale));
   letter-spacing: 1.5px;
   text-transform: uppercase;
   color: var(--accent);
@@ -792,7 +819,7 @@ body.theme-anthropic-dark .flip-content {
 }
 
 .category-count {
-  font-size: 10px;
+  font-size: calc(10px * var(--font-scale));
   color: var(--accent-dim);
   padding: 0 8px;
   line-height: 1.2;
@@ -839,7 +866,7 @@ body.theme-anthropic-dark .flip-content {
 }
 
 .task-text {
-  font-size: 15px;
+  font-size: calc(15px * var(--font-scale));
   line-height: 1.45;
   color: var(--text);
   flex: 1;
@@ -926,7 +953,7 @@ body.theme-anthropic-dark .flip-content {
 .sub-twig {
   display: flex;
   gap: 8px;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale));
   line-height: 1.45;
 }
 

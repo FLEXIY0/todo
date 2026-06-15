@@ -39,11 +39,7 @@ function loadState() {
     if (saved.settings) Object.assign(state.settings, saved.settings);
     if (Array.isArray(saved.history)) state.history = saved.history;
     if (saved.sync) Object.assign(state.sync, saved.sync);
-    if (saved.theme) {
-      state.theme = saved.theme;
-      document.body.className = 'theme-' + saved.theme;
-      THEME_IDS.forEach(n => document.getElementById('ti-' + n).classList.toggle('active', n === saved.theme));
-    }
+    if (saved.theme) state.theme = saved.theme;
   } catch (e) { }
 }
 
@@ -76,15 +72,24 @@ const state = {
     { id: 'sp_wish', name: 'Wishlist', categories: [], tree: true },
     { id: 'sp_shared', name: 'Shared', shared: true, mode: 'todo', boards: { todo: [], wish: [] } },
   ],
-  settings: { wishlistOn: true, sharedOn: true, historyLimit: 200 },
+  settings: { wishlistOn: true, sharedOn: true, historyLimit: 200, fontSize: 'm', fontFamily: 'system' },
   history: [],
   sync: { room: null, tombs: {} },
 };
+
+// Themes: id → drawer label/sub (the .theme-dot.<id> swatch lives in CSS)
+const THEMES = [
+  { id: 'classic', name: 'Classic', sub: 'Amber · Dark' },
+  { id: 'oled', name: 'OLED', sub: 'Black · White' },
+  { id: 'anthropic', name: 'Anthropic', sub: 'Ivory · Terracotta' },
+  { id: 'anthropic-dark', name: 'Anthropic Dark', sub: 'Antique · Dark' },
+];
 
 let spaceIndex = 0;
 let subtaskView = null;   // { catId, taskId } while inside a task's subtasks
 let historyView = false;  // history journal screen
 let settingsView = false; // settings screen
+let themesView = false;   // themes picker screen
 
 const strikeForwardSet = new Set();
 const strikeReverseSet = new Set();
@@ -233,6 +238,7 @@ function render() {
 
 function renderCurrentInto(container) {
   container.innerHTML = '';
+  if (themesView) return renderThemes(container);
   if (historyView) return renderHistory(container);
   if (settingsView) return renderSettings(container);
   if (subtaskView) return renderSubtasks(container);
@@ -244,7 +250,7 @@ function renderTabs() {
   const vis = visSpaces();
   const shown = vis.filter(sp => !sp.tabDot);
   // labels hidden per space; the row collapses entirely when none remain
-  const hidden = subtaskView || historyView || settingsView || !shown.length;
+  const hidden = subtaskView || historyView || settingsView || themesView || !shown.length;
   el.style.display = hidden ? 'none' : 'flex';
   if (hidden) return;
   el.innerHTML = '';
@@ -273,6 +279,10 @@ function renderSpace(container, space) {
     header.className = 'category-header';
     header.innerHTML = `<span class="cat-line"></span><span class="category-name">${esc(cat.name)}</span><span class="cat-line-mid"></span><span class="category-count">${doneN}/${cat.tasks.length}</span><span class="cat-line"></span>`;
     setupCategoryReorder(header, catEl, cat.id);
+    // triple tap on a category header clears its completed tasks
+    setupTripleTap(header, () => {
+      if (cat.tasks.some(t => t.done)) { navigator.vibrate && navigator.vibrate(20); clearCompletedTasks(cat.id); }
+    });
     catEl.appendChild(header);
 
     const tasksEl = document.createElement('div');
@@ -300,8 +310,9 @@ function renderSpace(container, space) {
           : `<div class="sub-bars">${subs.map(s => `<span class="sub-bar${s.done ? ' done' : ''}"></span>`).join('')}</div>`;
       }
       el.innerHTML = `<div class="task-bullet"></div><div class="task-text"><span class="strike-wrap">${esc(task.text)}</span>${subsHtml}</div>`;
-      // A task with subtasks opens its nested list; completion is automatic.
-      el.addEventListener('click', () => subs.length ? openSubtasks(cat.id, task.id) : toggleTask(cat.id, task.id));
+      // Single tap toggles (or opens subtasks if it has them); double tap
+      // always opens the nested subtask screen — see onTaskTap.
+      el.addEventListener('click', () => onTaskTap(cat.id, task.id));
       setupLongPress(el, () => openTaskSheet(cat.id, task.id));
       tasksEl.appendChild(el);
     });
@@ -464,7 +475,80 @@ function renderSettings(container) {
 
   frame.appendChild(list);
   container.appendChild(frame);
+
+  // ── Fonts ──
+  const fonts = document.createElement('div');
+  fonts.className = 'category';
+  fonts.innerHTML = `<div class="category-header"><span class="cat-line"></span><span class="category-name">Fonts</span><span class="cat-line-mid"></span><span class="cat-line"></span></div>`;
+  const fl = document.createElement('div');
+  fl.className = 'tasks';
+  fl.appendChild(chipRow('Text size', [['s', 'Small'], ['m', 'Medium'], ['l', 'Large']],
+    state.settings.fontSize, v => {
+      state.settings.fontSize = v;
+      logH('~', `Text size → ${v.toUpperCase()}`);
+      applyDisplay(); render();
+    }));
+  fl.appendChild(chipRow('Typeface', [['system', 'System'], ['mono', 'Mono'], ['serif', 'Serif']],
+    state.settings.fontFamily, v => {
+      state.settings.fontFamily = v;
+      logH('~', `Typeface → ${v}`);
+      applyDisplay(); render();
+    }));
+  fonts.appendChild(fl);
+  container.appendChild(fonts);
 }
+
+// a labelled row of mutually-exclusive selectable chips
+function chipRow(label, options, current, onPick) {
+  const row = document.createElement('div');
+  row.className = 'set-row chips';
+  const name = document.createElement('span');
+  name.className = 'set-name';
+  name.textContent = label;
+  row.appendChild(name);
+  const group = document.createElement('div');
+  group.className = 'chip-group';
+  options.forEach(([val, lbl]) => {
+    const chip = document.createElement('span');
+    chip.className = 'mode-chip' + (val === current ? ' active' : '');
+    chip.textContent = lbl;
+    chip.addEventListener('click', () => { if (val !== current) onPick(val); });
+    group.appendChild(chip);
+  });
+  row.appendChild(group);
+  return row;
+}
+
+// ── Themes screen ────────────────────────────────────────────
+function renderThemes(container) {
+  const back = document.createElement('div');
+  back.className = 'subtask-back';
+  back.innerHTML = `<span class="sb-arrow">←</span><span>Themes</span>`;
+  back.addEventListener('click', closeThemes);
+  container.appendChild(back);
+
+  const frame = document.createElement('div');
+  frame.className = 'category';
+  frame.innerHTML = `<div class="category-header"><span class="cat-line"></span><span class="category-name">Themes</span><span class="cat-line-mid"></span><span class="cat-line"></span></div>`;
+  const list = document.createElement('div');
+  list.className = 'tasks theme-list';
+  THEMES.forEach(t => {
+    const row = document.createElement('div');
+    row.className = 'theme-item' + (state.theme === t.id ? ' active' : '');
+    row.innerHTML = `<div class="theme-dot ${t.id}"></div><div class="theme-info"><div class="theme-name">${t.name}</div><div class="theme-sub">${t.sub}</div></div><div class="theme-check"></div>`;
+    row.addEventListener('click', () => setTheme(t.id));
+    list.appendChild(row);
+  });
+  frame.appendChild(list);
+  container.appendChild(frame);
+}
+
+function openThemes() {
+  closeDrawer();
+  armBack();
+  setTimeout(() => flipTo(1, () => { themesView = true; historyView = settingsView = false; subtaskView = null; }), 260);
+}
+function closeThemes() { flipTo(-1, () => { themesView = false; }); }
 
 // Per-space options: rename, subtask style, tab label, enable, delete
 function openSpaceSheet(spId) {
@@ -617,17 +701,31 @@ function setPeel(p) {
 function tweenPeel(from, to, done) {
   const dur = 420, t0 = performance.now();
   const ease = t => 1 - Math.pow(1 - t, 3);
+  flip.tweening = true;
+  flip.done = done;
   (function step(now) {
     if (!flip) return;
     const k = Math.min(1, (now - t0) / dur);
     setPeel(from + (to - from) * ease(k));
-    if (k < 1) requestAnimationFrame(step);
-    else done && done();
+    if (k < 1) flip.raf = requestAnimationFrame(step);
+    else { flip.tweening = false; const d = flip.done; flip.done = null; d && d(); }
   })(t0);
+}
+
+// Instantly finish an in-progress peel tween so a fast follow-up swipe
+// isn't dropped during the ~420ms animation (the "swipe sometimes stalls").
+function settleFlip() {
+  if (flip && flip.tweening) {
+    if (flip.raf) cancelAnimationFrame(flip.raf);
+    flip.tweening = false;
+    const d = flip.done; flip.done = null;
+    if (d) d();
+  }
 }
 
 // Finger-driven peel between spaces
 function flipDragStart(dir, tgtIdx) {
+  settleFlip();
   if (flip) return false;
   const vis = visSpaces();
   const tgt = tgtIdx !== undefined ? tgtIdx : spaceIndex + dir;
@@ -651,6 +749,7 @@ function flipDragEnd(commit) {
 }
 
 function flipToSpace(i) {
+  settleFlip();
   if (i === spaceIndex || flip) return;
   if (flipDragStart(i > spaceIndex ? 1 : -1, i)) flipDragEnd(true);
 }
@@ -659,11 +758,13 @@ function flipToSpace(i) {
 // A rightward swipe turns the nested page away like the space flip, landing
 // back on the space it was opened from. Mirrors closeSubtasks/History/Settings.
 function flipBackDragStart() {
-  if (flip || subtaskView === null && !historyView && !settingsView) return false;
+  settleFlip();
+  if (flip) return false;
   let restore;
   if (subtaskView) { const v = subtaskView; restore = () => { subtaskView = v; }; subtaskView = null; }
   else if (historyView) { restore = () => { historyView = true; }; historyView = false; }
   else if (settingsView) { restore = () => { settingsView = true; }; settingsView = false; }
+  else if (themesView) { restore = () => { themesView = true; }; themesView = false; }
   else return false;
   buildPeelLayer(-1);
   flip.backRestore = restore;
@@ -682,6 +783,7 @@ function flipBackDragEnd(commit) {
 
 // Programmatic peel for nested screens (subtasks, history, settings)
 function flipTo(dir, mutate) {
+  settleFlip();
   if (flip) { mutate(); render(); return; }
   buildPeelLayer(dir);
   mutate();
@@ -772,6 +874,70 @@ function beginCategoryDrag(catEl, catId, sx, sy) {
   document.addEventListener('touchcancel', onCancel);
   document.addEventListener('mousemove', move);
   document.addEventListener('mouseup', onEnd);
+}
+
+// ── Tap routing: single = toggle / open, double = open subtasks ──
+// Single tap stays instant: a plain task toggles right away and its history
+// entry is deferred past the double-tap window, so a quick second tap can
+// cancel the toggle cleanly and open the subtask screen instead.
+const DOUBLE_MS = 280;
+let taskTap = { id: null, t: 0, logTimer: null, undo: null };
+
+function onTaskTap(catId, taskId) {
+  const task = cats().find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
+  if (!task) return;
+  const hasSubs = task.subtasks && task.subtasks.length;
+  const now = Date.now();
+
+  if (taskTap.id === taskId && now - taskTap.t < DOUBLE_MS) {
+    // double tap → open subtasks; undo the optimistic first-tap toggle
+    clearTimeout(taskTap.logTimer);
+    if (taskTap.undo) taskTap.undo();
+    taskTap = { id: null, t: 0, logTimer: null, undo: null };
+    openSubtasks(catId, taskId);
+    return;
+  }
+
+  if (hasSubs) { // single tap on a task that has subtasks opens them
+    taskTap = { id: taskId, t: now, logTimer: null, undo: null };
+    openSubtasks(catId, taskId);
+    return;
+  }
+
+  // plain task: toggle now, log after the double-tap window
+  applyToggle(task, taskId, () => updateCategoryCount(catId));
+  stamp(task);
+  saveState();
+  const wasDone = task.done, text = task.text;
+  const undo = () => { applyToggle(task, taskId, () => updateCategoryCount(catId)); stamp(task); saveState(); };
+  taskTap = {
+    id: taskId, t: now, undo,
+    logTimer: setTimeout(() => {
+      logH(wasDone ? '✓' : '○', `${wasDone ? 'Completed' : 'Reopened'} "${trunc(text)}"`);
+      if (historyView) render();
+      taskTap.logTimer = null; taskTap.undo = null;
+    }, DOUBLE_MS + 30),
+  };
+}
+
+// ── Multi-tap helper ─────────────────────────────────────────
+// Fires cb on the Nth quick tap (default 3) within a rolling window,
+// ignoring taps that moved too far (so it never eats a scroll/drag).
+function setupTripleTap(el, cb, n = 3) {
+  let count = 0, timer = null, sx = 0, sy = 0;
+  const startPt = e => { const p = e.touches ? e.touches[0] : e; sx = p.clientX; sy = p.clientY; };
+  const tap = e => {
+    const p = e.changedTouches ? e.changedTouches[0] : e;
+    if (Math.abs(p.clientX - sx) > 12 || Math.abs(p.clientY - sy) > 12) { count = 0; return; }
+    count++;
+    clearTimeout(timer);
+    if (count >= n) { count = 0; cb(); return; }
+    timer = setTimeout(() => { count = 0; }, 460);
+  };
+  el.addEventListener('touchstart', startPt, { passive: true });
+  el.addEventListener('touchend', tap);
+  el.addEventListener('mousedown', startPt);
+  el.addEventListener('mouseup', tap);
 }
 
 // ── Subtask screen ───────────────────────────────────────────
@@ -1245,4 +1411,6 @@ if (window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.App) {
 // ── Helpers + Init ───────────────────────────────────────────
 function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 loadState();
+applyTheme();
+applyDisplay();
 render();
