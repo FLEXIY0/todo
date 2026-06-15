@@ -1,5 +1,5 @@
 // ── App meta ─────────────────────────────────────────────────
-const APP_VERSION = '1.4';
+const APP_VERSION = '1.5';
 const REPO_URL = 'https://github.com/FLEXIY0/todo';
 
 function openAbout() {
@@ -50,19 +50,31 @@ function closeTopLayer() {
   if (subtaskView) { closeSubtasks(); return true; }
   if (historyView) { closeHistory(); return true; }
   if (settingsView) { closeSettings(); return true; }
+  if (themesView) { closeThemes(); return true; }
   if (spaceIndex > 0) { flipToSpace(0); return true; }
   return false;
 }
 
-// ── Theme ────────────────────────────────────────────────────
-const THEME_IDS = ['classic', 'oled', 'anthropic', 'anthropic-dark'];
+// ── Theme & display ──────────────────────────────────────────
+function applyTheme() { document.body.className = 'theme-' + state.theme; }
 
 function setTheme(t) {
   state.theme = t;
-  document.body.className = 'theme-' + t;
-  THEME_IDS.forEach(n => document.getElementById('ti-' + n).classList.toggle('active', n === t));
+  applyTheme();
   saveState();
-  closeDrawer();
+  if (themesView) render(); // refresh the active check, stay on the screen
+}
+
+const FONT_SCALES = { s: 0.9, m: 1, l: 1.16 };
+const FONT_FAMS = {
+  system: 'Arial, Helvetica, sans-serif',
+  mono: "'Courier New', Courier, monospace",
+  serif: "Georgia, 'Times New Roman', serif",
+};
+function applyDisplay() {
+  const s = state.settings;
+  document.body.style.setProperty('--font-scale', FONT_SCALES[s.fontSize] || 1);
+  document.body.style.setProperty('--app-font', FONT_FAMS[s.fontFamily] || FONT_FAMS.system);
 }
 
 // ── Drawer ───────────────────────────────────────────────────
@@ -88,7 +100,7 @@ maskEl.addEventListener('click', () => closeDrawer());
 let pageDrag = 0, pageDragP = 0; // active page-flip swipe between spaces
 let backDrag = false;            // active "back" peel out of a nested screen
 
-function nestedView() { return subtaskView || historyView || settingsView; }
+function nestedView() { return subtaskView || historyView || settingsView || themesView; }
 
 document.addEventListener('touchstart', (e) => {
   if (overlayOpen()) return;
@@ -221,6 +233,23 @@ mainEl.addEventListener('mousemove', e => {
   const dx = e.clientX - epStartX;
   const dy = e.clientY - epStartY;
   if (Math.abs(dx) > 9 || Math.abs(dy) > 9) cancelEmptyPress();
+});
+
+// triple tap on empty space clears all completed in the current space
+let emptyTaps = 0, emptyTapTimer = null;
+mainEl.addEventListener('click', e => {
+  if (overlayOpen() || nestedView() || !isEmptySpace(e.target)) { emptyTaps = 0; return; }
+  emptyTaps++;
+  clearTimeout(emptyTapTimer);
+  if (emptyTaps >= 3) {
+    emptyTaps = 0;
+    if (cats().some(cat => cat.tasks.some(t => t.done))) {
+      navigator.vibrate && navigator.vibrate(20);
+      clearAllCompleted();
+    }
+    return;
+  }
+  emptyTapTimer = setTimeout(() => { emptyTaps = 0; }, 460);
 });
 
 // ── Bottom Sheet ─────────────────────────────────────────────
