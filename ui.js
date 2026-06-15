@@ -1,5 +1,5 @@
 // ── App meta ─────────────────────────────────────────────────
-const APP_VERSION = '1.3';
+const APP_VERSION = '1.4';
 const REPO_URL = 'https://github.com/FLEXIY0/todo';
 
 function openAbout() {
@@ -55,7 +55,7 @@ function closeTopLayer() {
 }
 
 // ── Theme ────────────────────────────────────────────────────
-const THEME_IDS = ['classic', 'oled', 'anthropic'];
+const THEME_IDS = ['classic', 'oled', 'anthropic', 'anthropic-dark'];
 
 function setTheme(t) {
   state.theme = t;
@@ -86,12 +86,17 @@ function overlayOpen()  {
 maskEl.addEventListener('click', () => closeDrawer());
 
 let pageDrag = 0, pageDragP = 0; // active page-flip swipe between spaces
+let backDrag = false;            // active "back" peel out of a nested screen
+
+function nestedView() { return subtaskView || historyView || settingsView; }
 
 document.addEventListener('touchstart', (e) => {
   if (overlayOpen()) return;
   swTouchX = e.touches[0].clientX; swTouchY = e.touches[0].clientY;
   swDir = null; swActive = false; swBase = drawerOpen ? DRAWER_W : 0;
 }, { passive: true });
+
+const clampP = v => Math.min(1, Math.max(0, v));
 
 document.addEventListener('touchmove', (e) => {
   if (overlayOpen()) return;
@@ -101,27 +106,59 @@ document.addEventListener('touchmove', (e) => {
     swDir = Math.abs(dx) >= Math.abs(dy) ? 'h' : 'v';
   }
   if (swDir !== 'h') return;
+  const span = window.innerWidth * 0.7;
 
-  // drawer: open state, or a rightward swipe from the left edge
-  if (drawerOpen || swActive || (swTouchX <= 44 && dx > 0 && !pageDrag)) {
+  // ── continue an in-progress finger drag (check before re-deciding) ──
+  if (backDrag) {
+    e.preventDefault();
+    pageDragP = clampP(dx / span);
+    flipDragMove(pageDragP);
+    return;
+  }
+  if (pageDrag) {
+    e.preventDefault();
+    pageDragP = clampP((pageDrag === 1 ? -dx : dx) / span);
+    flipDragMove(pageDragP);
+    return;
+  }
+  if (drawerOpen || swActive) {
     e.preventDefault(); swActive = true; applyOffset(swBase + dx, false);
     return;
   }
 
-  // page flip between spaces (only on plain space screens)
-  if (subtaskView || historyView || settingsView) return;
-  if (!pageDrag) {
-    const dir = dx < 0 ? 1 : -1;
-    if (!flipDragStart(dir)) return;
-    pageDrag = dir;
-    pageDragP = 0;
+  // ── start a new gesture ──
+  // nested screen: a rightward swipe peels the page away (acts as Back)
+  if (nestedView()) {
+    if (dx > 0 && flipBackDragStart()) {
+      backDrag = true;
+      e.preventDefault();
+      pageDragP = clampP(dx / span);
+      flipDragMove(pageDragP);
+    }
+    return; // nested screens have no drawer / space flip
   }
+
+  // main (first) space: a rightward swipe anywhere opens the drawer
+  if (dx > 0 && spaceIndex === 0) {
+    e.preventDefault(); swActive = true; applyOffset(swBase + dx, false);
+    return;
+  }
+
+  // otherwise: finger-driven page flip between spaces
+  const dir = dx < 0 ? 1 : -1;
+  if (!flipDragStart(dir)) return;
+  pageDrag = dir;
   e.preventDefault();
-  pageDragP = Math.min(1, Math.max(0, (pageDrag === 1 ? -dx : dx) / (window.innerWidth * 0.7)));
+  pageDragP = clampP((pageDrag === 1 ? -dx : dx) / span);
   flipDragMove(pageDragP);
 }, { passive: false });
 
 document.addEventListener('touchend', (e) => {
+  if (backDrag) {
+    flipBackDragEnd(pageDragP > 0.22);
+    backDrag = false; pageDragP = 0;
+    return;
+  }
   if (pageDrag) {
     flipDragEnd(pageDragP > 0.22);
     pageDrag = 0; pageDragP = 0;

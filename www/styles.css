@@ -41,6 +41,21 @@ body.theme-anthropic {
   --diff-del: #cf222e;
 }
 
+body.theme-anthropic-dark {
+  --bg: #2C2C2A;
+  --bg2: #34332F;
+  --accent: #CC785C;
+  --accent-dim: rgba(204, 120, 92, .5);
+  --accent-xs: rgba(204, 120, 92, .08);
+  --text: #ECE7DD;
+  --text-dim: rgba(236, 231, 221, .34);
+  --border: rgba(204, 120, 92, .5);
+  --border-dim: rgba(204, 120, 92, .22);
+  --danger: #E0685B;
+  --diff-add: #5fb86f;
+  --diff-del: #f0786e;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -70,6 +85,7 @@ body {
   display: flex;
   flex-direction: column;
   padding-top: 52px;
+  overflow-y: auto;
 }
 
 .drawer-section {
@@ -186,6 +202,33 @@ body {
   box-shadow: 0 4px 0 rgba(193, 95, 60, .4);
 }
 
+.theme-dot.anthropic-dark {
+  background: #2C2C2A;
+  border: 1px solid #CC785C;
+}
+
+.theme-dot.anthropic-dark::before {
+  content: '';
+  position: absolute;
+  top: 7px;
+  left: 6px;
+  width: 13px;
+  height: 2px;
+  background: #CC785C;
+  border-radius: 1px;
+}
+
+.theme-dot.anthropic-dark::after {
+  content: '';
+  position: absolute;
+  top: 13px;
+  left: 6px;
+  width: 18px;
+  height: 1px;
+  background: rgba(204, 120, 92, .4);
+  box-shadow: 0 4px 0 rgba(204, 120, 92, .4);
+}
+
 .theme-info {
   flex: 1;
 }
@@ -293,6 +336,14 @@ body.theme-anthropic .flip-content {
     radial-gradient(ellipse 60% 45% at 100% 100%, rgba(193, 95, 60, 0.08) 0%, transparent 100%),
     radial-gradient(ellipse 45% 90% at 0% 0%, rgba(193, 95, 60, 0.05) 0%, transparent 100%),
     #F0EEE6;
+}
+
+body.theme-anthropic-dark #main,
+body.theme-anthropic-dark .flip-content {
+  background:
+    radial-gradient(ellipse 55% 40% at 100% 100%, rgba(204, 120, 92, 0.12) 0%, transparent 100%),
+    radial-gradient(ellipse 45% 80% at 0% 0%, rgba(204, 120, 92, 0.06) 0%, transparent 100%),
+    #2C2C2A;
 }
 
 #main.snap {
