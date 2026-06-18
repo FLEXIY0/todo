@@ -325,24 +325,33 @@ function renderSpace(container, space) {
       const subs = task.subtasks || [];
       let subsHtml = '';
       if (subs.length) {
-        subsHtml = tree
+        if (tree) {
           // tree: the actual subtask texts, indented with branch glyphs
-          ? `<div class="sub-tree">${subs.map((s, i) =>
-              `<div class="sub-twig${s.done ? ' done' : ''}"><span class="tw-br">${i === subs.length - 1 ? '└' : '├'}</span><span class="tw-txt">${esc(s.text)}</span></div>`).join('')}</div>`
-          // stripes: one minimal bar per subtask
-          : `<div class="sub-bars">${subs.map(s => `<span class="sub-bar${s.done ? ' done' : ''}"></span>`).join('')}</div>`;
+          subsHtml = `<div class="sub-tree">${subs.map((s, i) =>
+            `<div class="sub-twig${s.done ? ' done' : ''}"><span class="tw-br">${i === subs.length - 1 ? '└' : '├'}</span><span class="tw-txt">${esc(s.text)}</span></div>`).join('')}</div>`;
+        } else {
+          // stripes: one bar per subtask, but never past the screen edge —
+          // overflow collapses into a "+N" counter for the rest
+          const STRIPE_W = 20; // 16px bar + 4px gap
+          const fit = Math.max(4, Math.floor(((window.innerWidth || 380) - 80) / STRIPE_W));
+          let shown = subs, more = 0;
+          if (subs.length > fit) { shown = subs.slice(0, fit - 1); more = subs.length - shown.length; }
+          const bars = shown.map(s => `<span class="sub-bar${s.done ? ' done' : ''}"></span>`).join('');
+          subsHtml = `<div class="sub-bars">${bars}${more ? `<span class="sub-more">+${more}</span>` : ''}</div>`;
+        }
       }
       el.innerHTML = `<div class="task-bullet"></div><div class="task-text"><span class="strike-wrap">${esc(task.text)}</span>${subsHtml}</div>`;
       // Single tap toggles (or opens subtasks if it has them); double tap
       // always opens the nested subtask screen — see onTaskTap.
       el.addEventListener('click', () => onTaskTap(cat.id, task.id));
-      setupLongPress(el, () => openTaskSheet(cat.id, task.id));
+      // Hold & release ≤1s edits the text; hold past 1s opens the menu.
+      setupHold(el, () => promptEditTask(cat.id, task.id), () => openTaskSheet(cat.id, task.id));
       tasksEl.appendChild(el);
     });
 
     const addBtn = document.createElement('div');
     addBtn.className = 'add-task-btn';
-    addBtn.innerHTML = `<div class="add-task-icon">+</div><span>Add task</span>`;
+    addBtn.innerHTML = `<div class="add-task-icon">${iconSvg('add')}</div><span>Add task</span>`;
     addBtn.addEventListener('click', () => promptAddTask(cat.id));
     tasksEl.appendChild(addBtn);
 
@@ -357,7 +366,7 @@ function renderSpace(container, space) {
     container.appendChild(hint);
     const addBtn = document.createElement('div');
     addBtn.className = 'add-task-btn center';
-    addBtn.innerHTML = `<div class="add-task-icon">+</div><span>Add category</span>`;
+    addBtn.innerHTML = `<div class="add-task-icon">${iconSvg('add')}</div><span>Add category</span>`;
     addBtn.addEventListener('click', () => openDialog('New category', '', val => addCategory(val), false));
     container.appendChild(addBtn);
   }
@@ -401,7 +410,7 @@ function setSharedBoard(m) {
 function renderHistory(container) {
   const back = document.createElement('div');
   back.className = 'subtask-back';
-  back.innerHTML = `<span class="sb-arrow">←</span><span>History</span>`;
+  back.innerHTML = `<span class="sb-arrow">${iconSvg('back')}</span><span>History</span>`;
   back.addEventListener('click', closeHistory);
   container.appendChild(back);
 
@@ -462,7 +471,7 @@ function closeHistory() { flipTo(-1, () => { historyView = false; }); }
 function renderSettings(container) {
   const back = document.createElement('div');
   back.className = 'subtask-back';
-  back.innerHTML = `<span class="sb-arrow">←</span><span>Settings</span>`;
+  back.innerHTML = `<span class="sb-arrow">${iconSvg('back')}</span><span>Settings</span>`;
   back.addEventListener('click', closeSettings);
   container.appendChild(back);
 
@@ -487,7 +496,7 @@ function renderSettings(container) {
 
   const addBtn = document.createElement('div');
   addBtn.className = 'add-task-btn';
-  addBtn.innerHTML = `<div class="add-task-icon">+</div><span>Add space</span>`;
+  addBtn.innerHTML = `<div class="add-task-icon">${iconSvg('add')}</div><span>Add space</span>`;
   addBtn.addEventListener('click', () => openDialog('New space', '', val => {
     const sp = { id: uid('sp'), name: val, categories: [], mt: nextMt() };
     state.spaces.splice(Math.max(0, state.spaces.length - 1), 0, sp); // before shared
@@ -546,7 +555,7 @@ function chipRow(label, options, current, onPick) {
 function renderThemes(container) {
   const back = document.createElement('div');
   back.className = 'subtask-back';
-  back.innerHTML = `<span class="sb-arrow">←</span><span>Themes</span>`;
+  back.innerHTML = `<span class="sb-arrow">${iconSvg('back')}</span><span>Themes</span>`;
   back.addEventListener('click', closeThemes);
   container.appendChild(back);
 
@@ -579,7 +588,7 @@ function closeThemes() { flipTo(-1, () => { themesView = false; }); }
 function renderConn(container) {
   const back = document.createElement('div');
   back.className = 'subtask-back';
-  back.innerHTML = `<span class="sb-arrow">←</span><span>Connection</span>`;
+  back.innerHTML = `<span class="sb-arrow">${iconSvg('back')}</span><span>Connection</span>`;
   back.addEventListener('click', closeConn);
   container.appendChild(back);
 
@@ -975,6 +984,7 @@ const DOUBLE_MS = 280;
 let taskTap = { id: null, t: 0, logTimer: null, undo: null };
 
 function onTaskTap(catId, taskId) {
+  if (holdConsumed) { holdConsumed = false; return; } // a hold just fired
   const task = cats().find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
   if (!task) return;
   const hasSubs = task.subtasks && task.subtasks.length;
@@ -1041,7 +1051,7 @@ function renderSubtasks(container) {
 
   const back = document.createElement('div');
   back.className = 'subtask-back';
-  back.innerHTML = `<span class="sb-arrow">←</span><span>${esc(cat.name)}</span>`;
+  back.innerHTML = `<span class="sb-arrow">${iconSvg('back')}</span><span>${esc(cat.name)}</span>`;
   back.addEventListener('click', closeSubtasks);
   container.appendChild(back);
 
@@ -1071,14 +1081,14 @@ function renderSubtasks(container) {
     el.className = cls;
     el.dataset.id = sub.id;
     el.innerHTML = `<div class="task-bullet"></div><div class="task-text"><span class="strike-wrap">${esc(sub.text)}</span></div>`;
-    el.addEventListener('click', () => toggleSubtask(cat.id, task.id, sub.id));
-    setupLongPress(el, () => openSubtaskSheet(cat.id, task.id, sub.id));
+    el.addEventListener('click', () => { if (holdConsumed) { holdConsumed = false; return; } toggleSubtask(cat.id, task.id, sub.id); });
+    setupHold(el, () => promptEditSubtask(cat.id, task.id, sub.id), () => openSubtaskSheet(cat.id, task.id, sub.id));
     tasksEl.appendChild(el);
   });
 
   const addBtn = document.createElement('div');
   addBtn.className = 'add-task-btn';
-  addBtn.innerHTML = `<div class="add-task-icon">+</div><span>Add subtask</span>`;
+  addBtn.innerHTML = `<div class="add-task-icon">${iconSvg('add')}</div><span>Add subtask</span>`;
   addBtn.addEventListener('click', () => promptAddSubtask(cat.id, task.id));
   tasksEl.appendChild(addBtn);
 
@@ -1104,6 +1114,41 @@ function setupLongPress(el, cb) {
   el.addEventListener('mousedown', start);
   el.addEventListener('mouseup', cancel);
   el.addEventListener('mouseleave', cancel);
+}
+
+// Two-stage hold: hold and release within the menu window → onEdit;
+// keep holding past it → onMenu (with a vibration cue at the switch).
+// `holdConsumed` suppresses the trailing click so it doesn't also toggle.
+let holdConsumed = false;
+const HOLD_EDIT = 350, HOLD_MENU = 1000;
+function setupHold(el, onEdit, onMenu) {
+  let sx = 0, sy = 0, phase = 0, menuT = null, editT = null;
+  const consume = () => { holdConsumed = true; setTimeout(() => { holdConsumed = false; }, 500); };
+  const start = (e) => {
+    const p = e.touches ? e.touches[0] : e;
+    sx = p.clientX; sy = p.clientY; phase = 0;
+    el.classList.add('pressing');
+    editT = setTimeout(() => { phase = 1; el.classList.add('hold-edit'); navigator.vibrate && navigator.vibrate(8); }, HOLD_EDIT);
+    menuT = setTimeout(() => {
+      phase = 2; el.classList.remove('pressing', 'hold-edit');
+      navigator.vibrate && navigator.vibrate(28);
+      consume(); onMenu();
+    }, HOLD_MENU);
+  };
+  const clear = () => { clearTimeout(editT); clearTimeout(menuT); el.classList.remove('pressing', 'hold-edit'); };
+  const end = () => {
+    clearTimeout(editT); clearTimeout(menuT); el.classList.remove('pressing', 'hold-edit');
+    if (phase === 1) { consume(); onEdit(); }  // released in the edit window
+    phase = 0;
+  };
+  const move = (e) => { const p = e.touches ? e.touches[0] : e; if (Math.abs(p.clientX - sx) > 9 || Math.abs(p.clientY - sy) > 9) clear(); };
+  el.addEventListener('touchstart', start, { passive: true });
+  el.addEventListener('touchend', end);
+  el.addEventListener('touchcancel', clear);
+  el.addEventListener('touchmove', move, { passive: true });
+  el.addEventListener('mousedown', start);
+  el.addEventListener('mouseup', end);
+  el.addEventListener('mouseleave', clear);
 }
 
 // ── Actions ──────────────────────────────────────────────────
@@ -1502,4 +1547,5 @@ function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(
 loadState();
 applyTheme();
 applyDisplay();
+fillIcons();
 render();
