@@ -750,6 +750,10 @@ body.theme-anthropic-dark .flip-content {
   flex-direction: column;
   gap: 18px;
   padding-top: 8px;
+  /* always leave empty room at the bottom to long-press for a new
+     category, even when the list fills the screen */
+  padding-bottom: 160px;
+  min-height: calc(100vh - 120px);
 }
 
 .category {
