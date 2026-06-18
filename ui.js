@@ -1,5 +1,5 @@
 // ── App meta ─────────────────────────────────────────────────
-const APP_VERSION = '1.8';
+const APP_VERSION = '1.9';
 const REPO_URL = 'https://github.com/FLEXIY0/todo';
 
 // ── Material icons (Google standard, inline SVG, themeable) ──
@@ -31,6 +31,8 @@ const MI = {
   settings: 'M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z',
   history: 'M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8z',
   info: 'M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z',
+  drag: 'M11 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm-2-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z',
+  school: 'M5 13.18v4L12 21l7-3.82v-4L12 17l-7-3.82zM12 3 1 9l11 6 9-4.91V17h2V9L12 3z',
 };
 // emoji currently passed around → Material icon name
 const EMOJI_MI = {
@@ -39,6 +41,7 @@ const EMOJI_MI = {
   '≡': 'list', '∴': 'tree', '◦': 'label', '⏻': 'power', '⟳': 'sync', '🛰': 'dns',
   '📶': 'wifi', '⇣': 'download', '↺': 'restore', '✉': 'share', '↗': 'open',
   '🌿': 'eco', '◐': 'palette', '⚙': 'settings', '±': 'history', 'ⓘ': 'info',
+  '⠿': 'drag', '🎓': 'school', '📶': 'wifi',
 };
 function iconSvg(name) {
   const d = MI[name];
@@ -57,12 +60,55 @@ function openAbout() {
   closeDrawer();
   setTimeout(() => openSheet('About', [
     { icon: '🌿', label: `Simple Todo v${APP_VERSION}`, action: () => { } },
+    { icon: '🎓', label: 'How to use — replay tour', action: () => openTour() },
     { icon: '↗', label: 'Source code on GitHub', action: () => {
         const a = document.createElement('a');
         a.href = REPO_URL; a.target = '_blank'; a.rel = 'noopener';
         a.click();
       } },
   ]), 300);
+}
+
+// ── First-run tour ───────────────────────────────────────────
+// Animated, gesture-by-gesture intro shown on a fresh install (empty
+// board). Each step demonstrates one gesture with a moving "finger".
+const TOUR = [
+  { g: 'tap',    t: 'Tap to complete',        d: 'Tap a task to check it off. Tap again to bring it back.' },
+  { g: 'hold',   t: 'Hold to edit',           d: 'Hold a task and release to edit the text. Keep holding for the menu (subtasks, copy, delete).' },
+  { g: 'double', t: 'Double-tap for subtasks', d: 'Double-tap a task to open its subtasks — a checklist inside a task.' },
+  { g: 'swipe',  t: 'Swipe between spaces',    d: 'Swipe left or right to flip pages: To-Do, Wishlist and a Shared space you can sync with friends.' },
+  { g: 'right',  t: 'Swipe right for the menu', d: 'On the first page, swipe right to open the menu — themes, settings, history and sync.' },
+  { g: 'press',  t: 'Add & arrange',          d: 'Tap ADD for tasks. Long-press empty space to add a category, or triple-tap it to clear completed.' },
+];
+let tourStep = 0;
+
+function openTour() {
+  closeSheet(); closeDrawer();
+  tourStep = 0;
+  document.getElementById('tour').classList.add('active');
+  armBack();
+  renderTourStep();
+}
+function closeTour(done) {
+  document.getElementById('tour').classList.remove('active');
+  if (done) { state.settings.onboarded = true; saveState(); }
+}
+function tourNext() {
+  if (tourStep >= TOUR.length - 1) { closeTour(true); return; }
+  tourStep++; renderTourStep();
+}
+function tourPrev() { if (tourStep > 0) { tourStep--; renderTourStep(); } }
+function renderTourStep() {
+  const s = TOUR[tourStep], last = tourStep === TOUR.length - 1;
+  document.getElementById('tourDemo').className = 'tour-demo tg-' + s.g;
+  document.getElementById('tourDemo').innerHTML =
+    '<div class="tg-stage"><div class="tg-card"></div><div class="tg-card sub"></div><div class="tg-finger"></div><div class="tg-arrow"></div></div>';
+  document.getElementById('tourTitle').textContent = s.t;
+  document.getElementById('tourText').textContent = s.d;
+  document.getElementById('tourDots').innerHTML = TOUR.map((_, i) =>
+    `<span class="tour-dot${i === tourStep ? ' on' : ''}"></span>`).join('');
+  document.getElementById('tourNext').textContent = last ? 'Got it' : 'Next';
+  document.getElementById('tourSkip').style.visibility = last ? 'hidden' : 'visible';
 }
 
 // ── Toast ────────────────────────────────────────────────────
@@ -95,6 +141,10 @@ window.addEventListener('popstate', () => {
   if (closeTopLayer()) armBack(); // consumed — re-arm for the next back
 });
 function closeTopLayer() {
+  if (document.getElementById('tour').classList.contains('active')) {
+    if (tourStep > 0) tourPrev(); else closeTour(false);
+    return true;
+  }
   if (document.getElementById('dialogOverlay').classList.contains('active')) { closeDialog(); return true; }
   if (document.getElementById('sheetOverlay').classList.contains('active')) { closeSheet(); return true; }
   if (drawerOpen) { closeDrawer(); return true; }
@@ -332,6 +382,9 @@ function openCategorySheet(catId) {
     { icon: '✏️', label: 'Rename category', action: () => promptRenameCategory(catId) },
     { icon: '⧉', label: 'Copy as text', action: () => exportCategory(catId) },
   ];
+  if (cats().length > 1) items.push(
+    { icon: '⠿', label: 'Reorder categories', action: () => { reorderMode = true; render(); toast('Drag the handles to reorder'); } }
+  );
   if (hasDone) items.push(
     { icon: '✓', label: 'Clear completed', action: () => clearCompletedTasks(catId) }
   );
@@ -368,6 +421,7 @@ function openSubtaskSheet(catId, taskId, subId) {
   openSheet(lbl, [
     { icon: sub.done ? '○' : '✓', label: sub.done ? 'Mark incomplete' : 'Mark complete', action: () => toggleSubtask(catId, taskId, subId) },
     { icon: '✏️', label: 'Edit subtask',   action: () => promptEditSubtask(catId, taskId, subId) },
+    { icon: '⧉', label: 'Copy as text',   action: () => exportSubtask(catId, taskId, subId) },
     { icon: '🗑️', label: 'Delete subtask', danger: true, action: () => deleteSubtask(catId, taskId, subId) },
   ]);
 }

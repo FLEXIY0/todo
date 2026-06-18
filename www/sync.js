@@ -334,10 +334,20 @@ async function handleIncoming(text, via) {
   const o = await openSealed(text);
   if (!o) { logSync('undecryptable payload via ' + via + ' (wrong room key?)'); return; }
   if (o.dev === DEV_ID) return; // our own retained message echoed back
+  if (o.dev) { presence[o.dev] = { ts: Date.now(), via, name: o.name || null }; refreshConn(); }
   applyingRemote = true;
   try { mergeBoards(o.boards || {}, o.tombs || {}); } finally { applyingRemote = false; }
   logSync('snapshot received (' + via + ')');
   render(); // saves; maybeSync sends our merged state back once if it differs
+}
+
+// roster of devices we've recently heard from in the room (dev id → last seen)
+const presence = {};
+function onlineDevices() {
+  const now = Date.now();
+  return Object.entries(presence)
+    .filter(([, v]) => now - v.ts < 25000)
+    .map(([id, v]) => ({ id, ts: v.ts, via: v.via }));
 }
 
 function mergeBoards(rBoards, rTombs) {
@@ -395,6 +405,7 @@ function stopSync() {
   if (conn) { try { conn.close(); } catch (e) { } conn = null; }
   if (peer) { try { peer.destroy(); } catch (e) { } peer = null; }
   peerRole = null;
+  Object.keys(presence).forEach(k => delete presence[k]);
   setSyncUI();
 }
 

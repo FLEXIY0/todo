@@ -1091,11 +1091,54 @@ body.theme-anthropic-dark .flip-content {
   z-index: 5;
   transition: none;
   background: var(--bg2);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, .4);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
+  opacity: .97;
 }
 
 .category.drag-shift {
-  transition: transform .25s cubic-bezier(.22, 1, .36, 1);
+  transition: transform .22s cubic-bezier(.22, 1, .36, 1);
+}
+
+/* ── Reorder mode ───────────────────────────────────────────── */
+.reorder-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 9px 12px;
+  border: 1px dashed var(--border-dim);
+  border-radius: 8px;
+  background: var(--accent-xs);
+}
+
+.category.reordering {
+  border-radius: 6px;
+  outline: 1px dashed var(--border-dim);
+  outline-offset: 2px;
+}
+
+.category.reordering .category-header {
+  cursor: default;
+}
+
+.cat-handle {
+  position: absolute;
+  right: 4px;
+  top: 12px;
+  z-index: 4;
+  padding: 6px;
+  color: var(--accent);
+  cursor: grab;
+  touch-action: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.cat-handle .mi {
+  width: 20px;
+  height: 20px;
 }
 
 /* ── Add buttons ────────────────────────────────────────────── */
@@ -1295,6 +1338,203 @@ body.theme-anthropic-dark .flip-content {
 .sb-arrow .mi {
   width: 19px;
   height: 19px;
+}
+
+/* ── First-run tour ─────────────────────────────────────────── */
+.tour-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: rgba(0, 0, 0, .82);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.tour-overlay.active {
+  display: flex;
+}
+
+.tour-card {
+  width: 100%;
+  max-width: 360px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 22px 22px 18px;
+  text-align: center;
+  animation: slideUp .35s cubic-bezier(.22, 1, .36, 1);
+}
+
+.tour-demo {
+  height: 168px;
+  border-radius: 12px;
+  background: var(--accent-xs);
+  border: 1px solid var(--border-dim);
+  overflow: hidden;
+  position: relative;
+  margin-bottom: 18px;
+}
+
+.tg-stage {
+  position: absolute;
+  inset: 0;
+}
+
+/* mock task card the gesture acts on */
+.tg-card {
+  position: absolute;
+  left: 28px;
+  right: 28px;
+  top: 58px;
+  height: 26px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--accent-dim), transparent 60%);
+  opacity: .5;
+}
+
+.tg-card.sub {
+  top: 96px;
+  opacity: .28;
+}
+
+/* the moving finger */
+.tg-finger {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, rgba(255, 255, 255, .35), var(--accent) 70%);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .4);
+  left: 50%;
+  top: 64px;
+  margin: -17px 0 0 -17px;
+}
+
+.tg-finger::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  opacity: 0;
+}
+
+.tg-arrow {
+  position: absolute;
+  top: 70px;
+  left: 40px;
+  right: 40px;
+  height: 2px;
+  background: var(--accent-dim);
+  opacity: 0;
+}
+
+/* tap */
+.tg-tap .tg-finger { animation: tgTap 1.7s ease-in-out infinite; }
+.tg-tap .tg-finger::after { animation: tgRipple 1.7s ease-out infinite; }
+@keyframes tgTap { 0%,100%{transform:translateY(-6px) scale(1)} 22%{transform:translateY(0) scale(.82)} 40%{transform:translateY(-6px) scale(1)} }
+@keyframes tgRipple { 0%,18%{opacity:0;transform:scale(.6)} 24%{opacity:.7} 55%{opacity:0;transform:scale(1.7)} 100%{opacity:0} }
+
+/* double tap */
+.tg-double .tg-finger { animation: tgDouble 1.8s ease-in-out infinite; }
+@keyframes tgDouble { 0%,100%{transform:scale(1)} 12%,30%{transform:scale(.82)} 21%{transform:scale(1)} }
+
+/* hold */
+.tg-hold .tg-finger { animation: tgHold 2.2s ease-in-out infinite; }
+.tg-hold .tg-finger::after { animation: tgHoldRing 2.2s ease-out infinite; }
+@keyframes tgHold { 0%,100%{transform:scale(1)} 18%,72%{transform:scale(.82)} }
+@keyframes tgHoldRing { 0%,18%{opacity:0;transform:scale(.7)} 22%{opacity:.8;transform:scale(.9)} 72%{opacity:.2;transform:scale(1.5)} 80%,100%{opacity:0} }
+
+/* swipe sideways */
+.tg-swipe .tg-finger { animation: tgSwipe 2s ease-in-out infinite; }
+@keyframes tgSwipe { 0%,100%{transform:translateX(80px)} 50%{transform:translateX(-80px)} }
+
+/* swipe right (menu) */
+.tg-right .tg-finger { animation: tgRight 1.9s ease-in-out infinite; left: 30px; }
+.tg-right .tg-arrow { animation: tgArrow 1.9s ease-in-out infinite; }
+@keyframes tgRight { 0%,12%{transform:translateX(0);opacity:1} 60%{transform:translateX(150px);opacity:1} 78%,100%{transform:translateX(150px);opacity:0} }
+@keyframes tgArrow { 0%,12%{opacity:0;clip-path:inset(0 100% 0 0)} 60%{opacity:.6;clip-path:inset(0 0 0 0)} 80%,100%{opacity:0} }
+
+/* press empty (add) */
+.tg-press .tg-card, .tg-press .tg-card.sub { opacity: .12; }
+.tg-press .tg-finger { top: 110px; animation: tgHold 2.2s ease-in-out infinite; }
+.tg-press .tg-finger::after { animation: tgHoldRing 2.2s ease-out infinite; }
+
+.tour-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+
+.tour-text {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text);
+  opacity: .82;
+  min-height: 60px;
+}
+
+.tour-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin: 14px 0 16px;
+}
+
+.tour-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  transition: background .2s, width .2s;
+}
+
+.tour-dot.on {
+  background: var(--accent);
+  width: 16px;
+  border-radius: 3px;
+}
+
+.tour-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tour-skip {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 12px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+  padding: 10px 6px;
+}
+
+.tour-next {
+  flex: 1;
+  max-width: 160px;
+  padding: 12px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 12px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.tour-next:active {
+  filter: brightness(.88);
 }
 
 /* ── Dialog ─────────────────────────────────────────────────── */

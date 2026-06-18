@@ -65,6 +65,20 @@
     </div>
   </div>
 
+  <!-- FIRST-RUN TOUR -->
+  <div class="tour-overlay" id="tour">
+    <div class="tour-card">
+      <div class="tour-demo" id="tourDemo"></div>
+      <div class="tour-title" id="tourTitle"></div>
+      <div class="tour-text" id="tourText"></div>
+      <div class="tour-dots" id="tourDots"></div>
+      <div class="tour-actions">
+        <button class="tour-skip" id="tourSkip" onclick="closeTour(true)">Skip</button>
+        <button class="tour-next" id="tourNext" onclick="tourNext()">Next</button>
+      </div>
+    </div>
+  </div>
+
 
   <script src="vendor/peerjs.min.js"></script>
   <script src="ui.js"></script>
