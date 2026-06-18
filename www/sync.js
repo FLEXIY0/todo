@@ -13,7 +13,13 @@
 // Merge: union + last-write-wins by `mt`, tombstones stop resurrection.
 // Every sync event is logged to the history journal (sign '⇄').
 
+// Eclipse's broker is on wss/443, which blends with normal HTTPS and so
+// passes most carrier/Wi-Fi firewalls (incl. RU mobile) — tried first.
+// The rest are fallbacks on their own ports. All are public + anonymous;
+// payloads are AES-GCM encrypted, and a retained snapshot + periodic
+// resync keep things consistent even if a broker drops messages.
 const DEFAULT_BROKERS = [
+  'wss://mqtt.eclipseprojects.io:443/mqtt',
   'wss://broker.emqx.io:8084/mqtt',
   'wss://broker.hivemq.com:8884/mqtt',
   'wss://test.mosquitto.org:8081',
