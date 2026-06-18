@@ -13,10 +13,11 @@ function saveState() {
   if (typeof maybeSync === 'function') maybeSync();
 }
 
+let firstRun = false;
 function loadState() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (!saved) return;
+    if (!saved) { firstRun = true; return; }
     if (saved.spaces) {
       state.spaces = saved.spaces;
     } else if (saved.categories) {
@@ -91,6 +92,7 @@ let historyView = false;  // history journal screen
 let settingsView = false; // settings screen
 let themesView = false;   // themes picker screen
 let connView = false;     // sync connection status screen
+let reorderMode = false;  // category drag-to-reorder mode (toggled from the category menu)
 
 const strikeForwardSet = new Set();
 const strikeReverseSet = new Set();
@@ -270,27 +272,38 @@ function renderCurrentInto(container) {
 
 function renderTabs() {
   const el = document.getElementById('spaceTabs');
-  const vis = visSpaces();
-  const shown = vis.filter(sp => !sp.tabDot);
-  // labels hidden per space; the row collapses entirely when none remain
-  const hidden = subtaskView || historyView || settingsView || themesView || connView || !shown.length;
+  const sp = curSpace();
+  // only the current space's label is shown — other pages' labels never
+  // appear here (not even as inactive tabs); hidden if its label is off
+  const hidden = subtaskView || historyView || settingsView || themesView || connView || !sp || sp.tabDot;
   el.style.display = hidden ? 'none' : 'flex';
-  if (hidden) return;
   el.innerHTML = '';
-  vis.forEach((sp, i) => {
-    if (sp.tabDot) return;
-    const t = document.createElement('div');
-    t.className = 'space-tab' + (i === spaceIndex ? ' active' : '');
-    t.textContent = sp.name;
-    t.addEventListener('click', () => flipToSpace(i));
-    el.appendChild(t);
-  });
+  if (hidden) return;
+  const t = document.createElement('div');
+  t.className = 'space-tab active';
+  t.textContent = sp.name;
+  el.appendChild(t);
 }
 
 function renderSpace(container, space) {
   if (space.shared) container.appendChild(buildSharedBar(space));
   const list = spCats(space);
   const tree = treeOn(space);
+
+  if (reorderMode) {
+    if (list.length < 2) { reorderMode = false; }
+    else {
+      const bar = document.createElement('div');
+      bar.className = 'reorder-bar';
+      bar.innerHTML = `<span class="sync-lbl">Drag ⠿ to reorder categories</span>`;
+      const done = document.createElement('span');
+      done.className = 'sync-btn';
+      done.textContent = 'Done';
+      done.addEventListener('click', () => { reorderMode = false; render(); });
+      bar.appendChild(done);
+      container.appendChild(bar);
+    }
+  }
 
   list.forEach(cat => {
     const catEl = document.createElement('div');
@@ -301,11 +314,20 @@ function renderSpace(container, space) {
     const header = document.createElement('div');
     header.className = 'category-header';
     header.innerHTML = `<span class="cat-line"></span><span class="category-name">${esc(cat.name)}</span><span class="cat-line-mid"></span><span class="category-count">${doneN}/${cat.tasks.length}</span><span class="cat-line"></span>`;
-    setupCategoryReorder(header, catEl, cat.id);
-    // triple tap on a category header clears its completed tasks
-    setupTripleTap(header, () => {
-      if (cat.tasks.some(t => t.done)) { navigator.vibrate && navigator.vibrate(20); clearCompletedTasks(cat.id); }
-    });
+    if (reorderMode) {
+      catEl.classList.add('reordering');
+      const handle = document.createElement('span');
+      handle.className = 'cat-handle';
+      handle.innerHTML = iconSvg('drag');
+      catEl.appendChild(handle);
+      setupReorderDrag(handle, catEl, cat.id);
+    } else {
+      // long-press opens the category menu; triple tap clears completed
+      setupLongPress(header, () => openCategorySheet(cat.id));
+      setupTripleTap(header, () => {
+        if (cat.tasks.some(t => t.done)) { navigator.vibrate && navigator.vibrate(20); clearCompletedTasks(cat.id); }
+      });
+    }
     catEl.appendChild(header);
 
     const tasksEl = document.createElement('div');
@@ -624,6 +646,36 @@ function renderConn(container) {
 
   frame.appendChild(list);
   container.appendChild(frame);
+
+  // ── Devices in the room ──
+  if (state.sync.room) {
+    const devs = (typeof onlineDevices === 'function') ? onlineDevices() : [];
+    const dframe = document.createElement('div');
+    dframe.className = 'category';
+    dframe.innerHTML = `<div class="category-header"><span class="cat-line"></span><span class="category-name">Devices</span><span class="cat-line-mid"></span><span class="category-count">${devs.length + 1}</span><span class="cat-line"></span></div>`;
+    const dlist = document.createElement('div');
+    dlist.className = 'tasks';
+    const me = (typeof DEV_ID !== 'undefined') ? DEV_ID : '';
+    dlist.appendChild(connRow('up', 'This device', esc(me.slice(0, 6)) + ' · you', true));
+    devs.sort((a, b) => b.ts - a.ts).forEach(d => {
+      dlist.appendChild(connRow('up', d.id.slice(0, 6), fmtAgo(d.ts) + ' · ' + d.via, false));
+    });
+    if (!devs.length) {
+      const hint = document.createElement('div');
+      hint.className = 'empty-hint';
+      hint.textContent = 'No other devices online';
+      dlist.appendChild(hint);
+    }
+    dframe.appendChild(dlist);
+    container.appendChild(dframe);
+  }
+}
+
+function fmtAgo(ts) {
+  const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (s < 5) return 'now';
+  if (s < 60) return s + 's ago';
+  return Math.round(s / 60) + 'm ago';
 }
 
 function brokerHostLabel(url) {
@@ -829,6 +881,7 @@ function flipDragStart(dir, tgtIdx) {
   const vis = visSpaces();
   const tgt = tgtIdx !== undefined ? tgtIdx : spaceIndex + dir;
   if (tgt < 0 || tgt >= vis.length || tgt === spaceIndex) return false;
+  reorderMode = false; // leave reorder mode when changing spaces
   buildPeelLayer(dir);
   flip.prevIndex = spaceIndex;
   spaceIndex = tgt;
@@ -892,88 +945,66 @@ function flipTo(dir, mutate) {
   tweenPeel(0, 1, () => { f.layer.remove(); flip = null; });
 }
 
-// ── Category reorder (hold & drag) ───────────────────────────
-// Long-press lifts the category; dragging moves it, neighbours slide out
-// of the way; releasing without movement opens the category sheet instead.
+// ── Category reorder (dedicated mode, drag by the handle) ────
+// Entered from the category menu ("Reorder categories"); a drag handle ⠿
+// appears on each header. Pressing the handle starts the drag immediately
+// (no long-press, no accidental lift) — neighbours slide out of the way.
 const CAT_GAP = 18; // matches .categories flex gap in CSS
 
-function setupCategoryReorder(header, catEl, catId) {
+function setupReorderDrag(handle, catEl, catId) {
   const start = (e) => {
+    if (e.cancelable) e.preventDefault();
     const p = e.touches ? e.touches[0] : e;
-    beginCategoryDrag(catEl, catId, p.clientX, p.clientY);
+    beginHandleDrag(catEl, catId, p.clientY);
   };
-  header.addEventListener('touchstart', start, { passive: true });
-  header.addEventListener('mousedown', start);
+  handle.addEventListener('touchstart', start, { passive: false });
+  handle.addEventListener('mousedown', start);
 }
 
-function beginCategoryDrag(catEl, catId, sx, sy) {
-  let lifted = false, moved = false;
-  let els = [], mids = [], i0 = 0, target = 0, slot = 0;
-
-  const timer = setTimeout(() => {
-    lifted = true;
-    navigator.vibrate && navigator.vibrate(30);
-    els = [...document.querySelectorAll('#categoriesContainer > .category')];
-    i0 = target = els.indexOf(catEl);
-    mids = els.map(el => { const r = el.getBoundingClientRect(); return r.top + r.height / 2; });
-    slot = catEl.offsetHeight + CAT_GAP;
-    catEl.classList.add('drag-lift');
-    els.forEach(el => { if (el !== catEl) el.classList.add('drag-shift'); });
-  }, 480);
+function beginHandleDrag(catEl, catId, sy) {
+  const els = [...document.querySelectorAll('#categoriesContainer > .category')];
+  const i0 = els.indexOf(catEl);
+  if (i0 < 0) return;
+  let target = i0;
+  const mids = els.map(el => { const r = el.getBoundingClientRect(); return r.top + r.height / 2; });
+  const slot = catEl.offsetHeight + CAT_GAP;
+  navigator.vibrate && navigator.vibrate(15);
+  catEl.classList.add('drag-lift');
+  els.forEach(el => { if (el !== catEl) el.classList.add('drag-shift'); });
 
   const move = (e) => {
+    if (e.cancelable) e.preventDefault();
     const p = e.touches ? e.touches[0] : e;
-    if (!lifted) {
-      // movement before the long-press fires = scroll intent, abort
-      if (Math.abs(p.clientX - sx) > 9 || Math.abs(p.clientY - sy) > 9) end(true);
-      return;
-    }
-    if (e.cancelable) e.preventDefault(); // keep the page from scrolling
     const dy = p.clientY - sy;
-    if (Math.abs(dy) > 6) moved = true;
     catEl.style.transform = `translateY(${dy}px)`;
-
     const center = mids[i0] + dy;
     target = i0;
     els.forEach((el, j) => {
       if (j === i0) return;
-      if (j < i0 && center < mids[j]) {
-        el.style.transform = `translateY(${slot}px)`;
-        target = Math.min(target, j);
-      } else if (j > i0 && center > mids[j]) {
-        el.style.transform = `translateY(${-slot}px)`;
-        target = Math.max(target, j);
-      } else {
-        el.style.transform = '';
-      }
+      if (j < i0 && center < mids[j]) { el.style.transform = `translateY(${slot}px)`; target = Math.min(target, j); }
+      else if (j > i0 && center > mids[j]) { el.style.transform = `translateY(${-slot}px)`; target = Math.max(target, j); }
+      else el.style.transform = '';
     });
   };
-
-  const end = (cancelled) => {
-    clearTimeout(timer);
+  const end = () => {
     document.removeEventListener('touchmove', move);
-    document.removeEventListener('touchend', onEnd);
-    document.removeEventListener('touchcancel', onCancel);
+    document.removeEventListener('touchend', end);
+    document.removeEventListener('touchcancel', end);
     document.removeEventListener('mousemove', move);
-    document.removeEventListener('mouseup', onEnd);
-    if (!lifted) return; // released before long-press fired — nothing to do
-
-    if (moved && !cancelled && target !== i0) {
-      const [cat] = cats().splice(i0, 1);
-      cats().splice(target, 0, cat);
+    document.removeEventListener('mouseup', end);
+    if (target !== i0) {
+      const arr = cats();
+      const [cat] = arr.splice(i0, 1);
+      arr.splice(target, 0, cat);
       logH('~', `Moved category "${trunc(cat.name)}"`);
     }
-    render(); // clears lift/shift classes and inline transforms
-    if (!moved && cancelled !== true) openCategorySheet(catId);
+    render(); // clears lift/shift classes and inline transforms, stays in reorder mode
   };
-  const onEnd = () => end(false);
-  const onCancel = () => end(true);
-
   document.addEventListener('touchmove', move, { passive: false });
-  document.addEventListener('touchend', onEnd);
-  document.addEventListener('touchcancel', onCancel);
+  document.addEventListener('touchend', end);
+  document.addEventListener('touchcancel', end);
   document.addEventListener('mousemove', move);
-  document.addEventListener('mouseup', onEnd);
+  document.addEventListener('mouseup', end);
 }
 
 // ── Tap routing: single = toggle / open, double = open subtasks ──
@@ -1460,6 +1491,13 @@ function exportTask(catId, taskId) {
   toast('Task copied to clipboard');
   logH('~', `Exported task "${trunc(task.text)}"`);
 }
+function exportSubtask(catId, taskId, subId) {
+  const sub = cats().find(c => c.id === catId)?.tasks.find(t => t.id === taskId)?.subtasks?.find(s => s.id === subId);
+  if (!sub) return;
+  copyText(`- [${sub.done ? 'x' : ' '}] ${sub.text}`);
+  toast('Subtask copied to clipboard');
+  logH('~', `Exported subtask "${trunc(sub.text)}"`);
+}
 function exportCategory(catId) {
   const cat = cats().find(c => c.id === catId);
   if (!cat) return;
@@ -1545,7 +1583,17 @@ if (window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.App) {
 // ── Helpers + Init ───────────────────────────────────────────
 function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 loadState();
+if (firstRun) {
+  // fresh install: start from an empty canvas and run the tour
+  state.spaces.forEach(sp => { if (sp.categories) sp.categories = []; });
+  state.settings.onboarded = false;
+} else if (state.settings.onboarded === undefined) {
+  state.settings.onboarded = true; // existing users skip the tour (replay from About)
+}
 applyTheme();
 applyDisplay();
 fillIcons();
 render();
+if (!state.settings.onboarded) {
+  setTimeout(() => { if (typeof openTour === 'function') openTour(); }, 350);
+}
