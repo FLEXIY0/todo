@@ -117,7 +117,28 @@ function spCats(sp, board) {
 }
 // subtask display style: stripes or tree
 function treeOn(sp) { return sp.shared ? sp.mode === 'wish' : !!sp.tree; }
-function stamp(o) { o.mt = Date.now(); }
+
+// Hybrid logical clock: monotonic timestamp that never goes backwards
+// relative to anything we've seen from other devices. This keeps
+// last-write-wins merges correct even when two phones' wall clocks
+// disagree (the cause of "done shows for one device only").
+function nextMt() {
+  const t = Math.max(Date.now(), (state.sync.clock || 0) + 1);
+  state.sync.clock = t;
+  return t;
+}
+function stamp(o) { o.mt = nextMt(); }
+
+// Globally-unique id: device tag + time + counter, so two phones adding
+// at the same moment never collide (which caused phantom duplicates).
+const DEVTAG = (() => {
+  let d = localStorage.getItem('todo_devtag');
+  if (!d) { d = Math.random().toString(36).slice(2, 6); localStorage.setItem('todo_devtag', d); }
+  return d;
+})();
+let uidN = 0;
+function uid(p) { return p + DEVTAG + Date.now().toString(36) + (uidN++).toString(36); }
+
 function trunc(s, n = 30) { return s.length > n ? s.slice(0, n) + '…' : s; }
 // history data context: which space/board an entry belongs to
 function histCtx() {
@@ -126,7 +147,7 @@ function histCtx() {
 }
 // record a deletion tombstone so sync doesn't resurrect the item
 function tombIfShared(space, id) {
-  if (space.shared) state.sync.tombs[id] = Date.now();
+  if (space.shared) state.sync.tombs[id] = nextMt();
 }
 
 // ── History journal ──────────────────────────────────────────
@@ -159,14 +180,14 @@ function restoreH(entryId) {
   const findCat = (catId, catName) => {
     let c = arr.find(x => x.id === catId);
     if (!c) {
-      c = { id: catId || 'c' + Date.now(), name: catName || 'Restored', tasks: [], mt: Date.now() };
+      c = { id: catId || uid('c'), name: catName || 'Restored', tasks: [], mt: nextMt() };
       arr.push(c);
     }
     return c;
   };
   const revive = (cat, task) => {
     if (cat.tasks.some(t => t.id === task.id)) return;
-    task.mt = Date.now();
+    task.mt = nextMt();
     delete state.sync.tombs[task.id];
     cat.tasks.push(task);
   };
@@ -176,7 +197,7 @@ function restoreH(entryId) {
     case 'tasks_clear': d.items.forEach(it => revive(findCat(it.catId, it.catName), it.task)); break;
     case 'cat_del':
       if (!arr.some(c => c.id === d.category.id)) {
-        d.category.mt = Date.now();
+        d.category.mt = nextMt();
         delete state.sync.tombs[d.category.id];
         arr.splice(Math.min(d.index, arr.length), 0, d.category);
       }
@@ -211,7 +232,7 @@ function restoreH(entryId) {
     case 'space_wipe':
       d.categories.forEach(c => {
         if (!arr.some(x => x.id === c.id)) {
-          c.mt = Date.now();
+          c.mt = nextMt();
           delete state.sync.tombs[c.id];
           arr.push(c);
         }
@@ -466,7 +487,7 @@ function renderSettings(container) {
   addBtn.className = 'add-task-btn';
   addBtn.innerHTML = `<div class="add-task-icon">+</div><span>Add space</span>`;
   addBtn.addEventListener('click', () => openDialog('New space', '', val => {
-    const sp = { id: 'sp' + Date.now(), name: val, categories: [], mt: Date.now() };
+    const sp = { id: uid('sp'), name: val, categories: [], mt: nextMt() };
     state.spaces.splice(Math.max(0, state.spaces.length - 1), 0, sp); // before shared
     logH('+', `Added space "${trunc(val)}"`);
     render();
@@ -1104,7 +1125,7 @@ function promptAddSubtask(catId, taskId) {
     const task = cats().find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
     if (!task) return;
     task.subtasks = task.subtasks || [];
-    task.subtasks.push({ id: 's' + Date.now(), text: val, done: false });
+    task.subtasks.push({ id: uid('s'), text: val, done: false });
     syncParentDone(task);
     stamp(task);
     logH('+', `Added subtask "${trunc(val)}" to "${trunc(task.text, 20)}"`);
@@ -1222,7 +1243,7 @@ function updateCategoryCount(catId) {
 }
 
 function addCategory(name) {
-  cats().push({ id: 'c' + Date.now(), name, tasks: [], mt: Date.now() });
+  cats().push({ id: uid('c'), name, tasks: [], mt: nextMt() });
   logH('+', `Added category "${trunc(name)}"`);
   render();
 }
@@ -1281,7 +1302,7 @@ function promptAddTask(catId) {
   openDialog('New task', '', val => {
     const cat = cats().find(c => c.id === catId);
     if (!cat) return;
-    cat.tasks.push({ id: 't' + Date.now(), text: val, done: false, mt: Date.now() });
+    cat.tasks.push({ id: uid('t'), text: val, done: false, mt: nextMt() });
     stamp(cat);
     logH('+', `Added "${trunc(val)}" to "${trunc(cat.name, 18)}"`);
     render();
@@ -1341,12 +1362,9 @@ function exportSpaceAll() {
 }
 
 // ── Import from clipboard ────────────────────────────────────
-// Lenient markdown-checklist parser: '## Name' starts a category,
-// '- [x] text' / '- text' / bare lines are tasks, indented ones are
-// subtasks of the task above. '# Title' (space heading) is skipped.
-let uidN = 0;
-function uid(p) { return p + Date.now().toString(36) + (uidN++).toString(36); }
-
+// Lenient markdown-checklist parser: '## Name' starts a category;
+// '- [x] text', '- text', '1) text', '2. text' or bare lines are tasks;
+// indented ones are subtasks of the task above. '# Title' is skipped.
 function parseChecklist(text) {
   const out = [];
   let cat = null, lastTask = null;
@@ -1356,13 +1374,14 @@ function parseChecklist(text) {
     let m;
     if ((m = line.match(/^(#{1,6})\s+(.+)/))) {
       if (m[1].length === 1) return; // space title — ignore
-      cat = { id: uid('c'), name: m[2].trim(), tasks: [], mt: Date.now() };
+      cat = { id: uid('c'), name: m[2].trim(), tasks: [], mt: nextMt() };
       out.push(cat);
       lastTask = null;
       return;
     }
     const isSub = /^(\s{2,}|\t)/.test(raw);
-    const tm = line.trim().match(/^[-*+]\s*(?:\[([ xX])\])?\s*(.*)$/);
+    // bullets (- * +), numbered (1. 1) 2)), lettered (a. a)) or a bare line
+    const tm = line.trim().match(/^(?:[-*+]|\d{1,3}[.)]|[a-zA-Z][.)])\s*(?:\[([ xX])\])?\s*(.*)$/);
     const done = !!tm && (tm[1] || '').toLowerCase() === 'x';
     const txt = (tm ? tm[2] : line.trim()).trim();
     if (!txt) return;
@@ -1372,10 +1391,10 @@ function parseChecklist(text) {
       syncParentDone(lastTask);
     } else {
       if (!cat) {
-        cat = { id: uid('c'), name: 'Imported', tasks: [], mt: Date.now() };
+        cat = { id: uid('c'), name: 'Imported', tasks: [], mt: nextMt() };
         out.push(cat);
       }
-      lastTask = { id: uid('t'), text: txt, done, mt: Date.now() };
+      lastTask = { id: uid('t'), text: txt, done, mt: nextMt() };
       cat.tasks.push(lastTask);
     }
   });

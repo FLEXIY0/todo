@@ -1,5 +1,5 @@
 // ── App meta ─────────────────────────────────────────────────
-const APP_VERSION = '1.5';
+const APP_VERSION = '1.6';
 const REPO_URL = 'https://github.com/FLEXIY0/todo';
 
 function openAbout() {

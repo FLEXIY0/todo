@@ -303,16 +303,22 @@ function mergeBoards(rBoards, rTombs) {
   const sp = sharedSp();
   if (!sp) return;
   const tombs = state.sync.tombs;
-  Object.entries(rTombs).forEach(([k, v]) => { if (!tombs[k] || tombs[k] < v) tombs[k] = v; });
+  let maxSeen = 0;
+  Object.entries(rTombs).forEach(([k, v]) => {
+    if (!tombs[k] || tombs[k] < v) tombs[k] = v;
+    if (v > maxSeen) maxSeen = v;
+  });
   const dead = o => (tombs[o.id] || 0) > (o.mt || 0);
 
   ['todo', 'wish'].forEach(b => {
     const local = sp.boards[b] = sp.boards[b] || [];
     (rBoards[b] || []).forEach(rc => {
+      if ((rc.mt || 0) > maxSeen) maxSeen = rc.mt || 0;
       let lc = local.find(c => c.id === rc.id);
       if (!lc) { local.push(rc); return; }
       if ((rc.mt || 0) > (lc.mt || 0)) { lc.name = rc.name; lc.mt = rc.mt; }
       (rc.tasks || []).forEach(rt => {
+        if ((rt.mt || 0) > maxSeen) maxSeen = rt.mt || 0;
         const lt = lc.tasks.find(t => t.id === rt.id);
         if (!lt) lc.tasks.push(rt);
         else if ((rt.mt || 0) > (lt.mt || 0)) {
@@ -323,6 +329,9 @@ function mergeBoards(rBoards, rTombs) {
     sp.boards[b] = local.filter(c => !dead(c));
     sp.boards[b].forEach(c => { c.tasks = c.tasks.filter(t => !dead(t)); });
   });
+  // advance our logical clock past everything we just saw, so the next
+  // local edit on this device reliably wins the next merge
+  if (maxSeen) state.sync.clock = Math.max(state.sync.clock || 0, maxSeen);
 }
 
 // ── Room management ──────────────────────────────────────────
@@ -390,15 +399,34 @@ function leaveRoom() {
 
 function openSyncSheet() {
   const room = state.sync.room;
+  const custom = state.sync.brokers && state.sync.brokers.length;
   const items = [
     { icon: '✉', label: room ? 'Show / copy invite code' : 'Create an invite', action: startInvite },
     { icon: '⇣', label: 'Join with a code', action: joinShared },
   ];
   if (room) {
     items.push({ icon: '⟳', label: 'Sync now', action: () => { lastSent = ''; startSync(); sendSnap(true); toast('Syncing…'); } });
-    items.push({ icon: '✕', label: 'Leave shared sync', danger: true, action: leaveRoom });
   }
+  items.push({ icon: '🛰', label: custom ? 'Custom server (set) — change' : 'Use a custom server (if blocked)', action: setCustomServer });
+  if (custom) items.push({ icon: '↺', label: 'Back to default servers', action: () => { state.sync.brokers = null; saveState(); stopSync(); startSync(); toast('Using default servers'); } });
+  if (room) items.push({ icon: '✕', label: 'Leave shared sync', danger: true, action: leaveRoom });
   openSheet(room ? 'Sync · room ' + room.id : 'Sync · not linked', items);
+}
+
+// Escape hatch for networks that block the public brokers (e.g. some
+// mobile carriers): paste your own MQTT-over-WebSocket broker URL.
+// One per line; the client fails over between them. Best on port 443.
+function setCustomServer() {
+  const cur = (state.sync.brokers || []).join('\n');
+  openDialog('Custom broker URL(s) — wss://host:port/mqtt, one per line', cur, val => {
+    const urls = val.split(/\s+/).map(s => s.trim()).filter(s => /^wss?:\/\//.test(s));
+    state.sync.brokers = urls.length ? urls : null;
+    mqttIdx = 0;
+    saveState();
+    stopSync();
+    startSync();
+    toast(urls.length ? 'Custom server saved' : 'Using default servers');
+  }, true);
 }
 
 function copyText(t) {
@@ -424,6 +452,14 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 window.addEventListener('online', () => { if (syncEnabled()) { mqttBackoff = 2; peerBackoff = 2; startSync(); } });
+
+// Periodic full-state resync: QoS 0 publishes can be dropped on flaky
+// mobile networks, so every few seconds each device rebroadcasts its full
+// snapshot. Union + last-write-wins makes this self-healing and is what
+// lets many devices in one room converge ("done shows for everyone").
+setInterval(() => {
+  if (syncEnabled() && ((mqtt && mqtt.open) || (conn && conn.open))) sendSnap(true);
+}, 11000);
 
 (function initSync() {
   const cutoff = Date.now() - 60 * 24 * 3600 * 1000;
