@@ -90,6 +90,7 @@ let subtaskView = null;   // { catId, taskId } while inside a task's subtasks
 let historyView = false;  // history journal screen
 let settingsView = false; // settings screen
 let themesView = false;   // themes picker screen
+let connView = false;     // sync connection status screen
 
 const strikeForwardSet = new Set();
 const strikeReverseSet = new Set();
@@ -260,6 +261,7 @@ function render() {
 function renderCurrentInto(container) {
   container.innerHTML = '';
   if (themesView) return renderThemes(container);
+  if (connView) return renderConn(container);
   if (historyView) return renderHistory(container);
   if (settingsView) return renderSettings(container);
   if (subtaskView) return renderSubtasks(container);
@@ -271,7 +273,7 @@ function renderTabs() {
   const vis = visSpaces();
   const shown = vis.filter(sp => !sp.tabDot);
   // labels hidden per space; the row collapses entirely when none remain
-  const hidden = subtaskView || historyView || settingsView || themesView || !shown.length;
+  const hidden = subtaskView || historyView || settingsView || themesView || connView || !shown.length;
   el.style.display = hidden ? 'none' : 'flex';
   if (hidden) return;
   el.innerHTML = '';
@@ -571,6 +573,73 @@ function openThemes() {
 }
 function closeThemes() { flipTo(-1, () => { themesView = false; }); }
 
+// ── Connection status screen ─────────────────────────────────
+// Live list of sync endpoints with a green/amber/red dot each, so you
+// can see which broker is carrying the sync (with or without a VPN).
+function renderConn(container) {
+  const back = document.createElement('div');
+  back.className = 'subtask-back';
+  back.innerHTML = `<span class="sb-arrow">←</span><span>Connection</span>`;
+  back.addEventListener('click', closeConn);
+  container.appendChild(back);
+
+  const bar = document.createElement('div');
+  bar.className = 'hist-bar';
+  bar.innerHTML = `<span class="sync-lbl">${state.sync.room ? 'Room ' + esc(state.sync.room.id) : 'Not linked'}</span>`;
+  const retest = document.createElement('span');
+  retest.className = 'sync-btn';
+  retest.textContent = 'Re-test';
+  retest.addEventListener('click', () => { if (typeof startSync === 'function') { startSync(); toast('Re-testing…'); } });
+  bar.appendChild(retest);
+  container.appendChild(bar);
+
+  const frame = document.createElement('div');
+  frame.className = 'category';
+  frame.innerHTML = `<div class="category-header"><span class="cat-line"></span><span class="category-name">Channels</span><span class="cat-line-mid"></span><span class="cat-line"></span></div>`;
+  const list = document.createElement('div');
+  list.className = 'tasks';
+
+  // peer-to-peer row
+  const p2pUp = typeof conn !== 'undefined' && conn && conn.open;
+  list.appendChild(connRow(p2pUp ? 'up' : (state.sync.room ? 'wait' : 'down'),
+    'Direct P2P', p2pUp ? 'connected' : 'standby', false));
+
+  // one row per broker
+  const stat = (typeof brokerStat !== 'undefined') ? brokerStat : {};
+  (typeof brokerList === 'function' ? brokerList() : []).forEach(url => {
+    const s = stat[url] || { state: state.sync.room ? 'wait' : 'down' };
+    const sub = s.state === 'up' ? (s.active ? 'active' + (s.ms ? ' · ' + s.ms + 'ms' : '') : 'reachable' + (s.ms ? ' · ' + s.ms + 'ms' : ''))
+      : s.state === 'wait' ? 'testing…' : 'unreachable';
+    list.appendChild(connRow(s.state, brokerHostLabel(url), sub, s.active));
+  });
+
+  frame.appendChild(list);
+  container.appendChild(frame);
+}
+
+function brokerHostLabel(url) {
+  const m = url.replace(/^wss?:\/\//, '');
+  return m.length > 34 ? m.slice(0, 34) + '…' : m;
+}
+
+function connRow(stateName, name, sub, active) {
+  const row = document.createElement('div');
+  row.className = 'conn-row';
+  const cls = stateName === 'up' ? 'on' : stateName === 'wait' ? 'wait' : 'err';
+  row.innerHTML = `<span class="sync-dot ${cls}"></span>` +
+    `<span class="conn-name">${esc(name)}${active ? ' <span class="conn-active">●</span>' : ''}</span>` +
+    `<span class="conn-sub">${esc(sub)}</span>`;
+  return row;
+}
+
+function openConn() {
+  closeSheet();
+  armBack();
+  if (typeof startSync === 'function') startSync(); // kick a fresh probe
+  setTimeout(() => flipTo(1, () => { connView = true; themesView = historyView = settingsView = false; subtaskView = null; }), 260);
+}
+function closeConn() { flipTo(-1, () => { connView = false; }); }
+
 // Per-space options: rename, subtask style, tab label, enable, delete
 function openSpaceSheet(spId) {
   const sp = state.spaces.find(s => s.id === spId);
@@ -786,6 +855,7 @@ function flipBackDragStart() {
   else if (historyView) { restore = () => { historyView = true; }; historyView = false; }
   else if (settingsView) { restore = () => { settingsView = true; }; settingsView = false; }
   else if (themesView) { restore = () => { themesView = true; }; themesView = false; }
+  else if (connView) { restore = () => { connView = true; }; connView = false; }
   else return false;
   buildPeelLayer(-1);
   flip.backRestore = restore;

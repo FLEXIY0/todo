@@ -31,7 +31,10 @@ const DEV_ID = (() => {
   return d;
 })();
 
-let mqtt = null, mqttIdx = 0, mqttRetryT = null, mqttBackoff = 2, mqttWanted = false;
+let mqtt = null, mqttRetryT = null, mqttBackoff = 2, mqttWanted = false;
+let activeBroker = null;      // url of the live broker
+let brokerStat = {};          // url -> { state:'wait'|'up'|'down', active?, ms? }
+let mqttProbes = [];          // in-flight probe clients
 let peer = null, conn = null, peerRetryT = null, peerBackoff = 2, peerRole = null;
 let sendTimer = null, applyingRemote = false, lastSent = '';
 let syncState = 'off';
@@ -168,39 +171,71 @@ function mqttOpen(url, opts) {
   };
 }
 
-function brokerHost(url) { return url.replace(/^wss:\/\//, '').split(/[:/]/)[0]; }
+function brokerHost(url) { return url.replace(/^wss?:\/\//, '').split(/[:/]/)[0]; }
+function brokerList() { return state.sync.brokers || DEFAULT_BROKERS; }
+function refreshConn() { if (typeof connView !== 'undefined' && connView) render(); }
 
+// Auto-select a working broker: probe every broker in parallel and keep
+// the first that connects. This adapts on its own to the network — with
+// a VPN some endpoints are reachable, without it others are, and whatever
+// answers wins. Per-broker up/down is tracked for the Connection screen.
 function startMqtt() {
   if (!syncEnabled()) return;
-  if (mqtt && mqtt.open) return;
-  if (mqtt) { mqtt.close(); mqtt = null; }
   mqttWanted = true;
-  const urls = state.sync.brokers || DEFAULT_BROKERS;
-  const url = urls[mqttIdx % urls.length];
-  logSync('broker connecting: ' + brokerHost(url));
-  setSyncUI();
-  const me = mqttOpen(url, {
-    clientId: 'st_' + DEV_ID + Math.random().toString(36).slice(2, 6),
-    topic: roomTopic(),
-    onOpen() {
-      mqttBackoff = 2;
-      logSync('broker connected: ' + brokerHost(url));
-      setSyncUI();
-      sendSnap(true);
-    },
-    onMessage(t, payload) { handleIncoming(payload, 'broker'); },
-    onClose() {
-      if (mqtt === me) mqtt = null;
-      setSyncUI();
-      if (!mqttWanted) return;
-      mqttIdx++;
-      logSync('broker lost: ' + brokerHost(url) + ', retry in ' + mqttBackoff + 's');
-      clearTimeout(mqttRetryT);
-      mqttRetryT = setTimeout(startMqtt, mqttBackoff * 1000);
-      mqttBackoff = Math.min(60, mqttBackoff * 2);
-    },
+  // drop stale probes, keep the live connection if it's still up
+  mqttProbes.forEach(c => { if (c !== mqtt) { try { c.close(); } catch (e) { } } });
+  mqttProbes = (mqtt && mqtt.open) ? [mqtt] : [];
+
+  brokerList().forEach(url => {
+    if (mqtt && mqtt.open && activeBroker === url) { brokerStat[url] = { state: 'up', active: true, ms: brokerStat[url] && brokerStat[url].ms }; return; }
+    brokerStat[url] = { state: 'wait' };
+    const t0 = (performance.now ? performance.now() : Date.now());
+    let settled = false;
+    const client = mqttOpen(url, {
+      clientId: 'st_' + DEV_ID + Math.random().toString(36).slice(2, 6),
+      topic: roomTopic(),
+      onOpen() {
+        settled = true;
+        const ms = Math.round((performance.now ? performance.now() : Date.now()) - t0);
+        if (!mqtt || !mqtt.open) {            // first reachable broker wins
+          mqtt = client; activeBroker = url; mqttBackoff = 2;
+          brokerStat[url] = { state: 'up', active: true, ms };
+          logSync('broker connected: ' + brokerHost(url) + ' (' + ms + 'ms)');
+          setSyncUI();
+          sendSnap(true);
+        } else {                               // already have a live one
+          brokerStat[url] = { state: 'up', ms };
+          if (client !== mqtt) { try { client.close(); } catch (e) { } }
+        }
+        refreshConn();
+      },
+      onMessage(t, payload) { handleIncoming(payload, 'broker'); },
+      onClose() {
+        mqttProbes = mqttProbes.filter(c => c !== client);
+        if (mqtt === client) {                 // the live broker dropped
+          mqtt = null; activeBroker = null;
+          brokerStat[url] = { state: 'down' };
+          setSyncUI();
+          if (mqttWanted) { clearTimeout(mqttRetryT); mqttRetryT = setTimeout(startMqtt, mqttBackoff * 1000); mqttBackoff = Math.min(60, mqttBackoff * 2); }
+        } else if (!settled) {
+          brokerStat[url] = { state: 'down' };
+        }
+        refreshConn();
+      },
+    });
+    if (!client) { brokerStat[url] = { state: 'down' }; return; }
+    mqttProbes.push(client);
+    // no CONNACK within 7s → mark unreachable and drop the probe
+    setTimeout(() => {
+      if (!settled && client !== mqtt) {
+        if ((brokerStat[url] || {}).state !== 'up') brokerStat[url] = { state: 'down' };
+        try { client.close(); } catch (e) { }
+        refreshConn();
+      }
+    }, 7000);
   });
-  mqtt = me;
+  setSyncUI();
+  refreshConn();
 }
 
 // ── P2P lane (deterministic rendezvous from the room id) ─────
@@ -352,7 +387,11 @@ function stopSync() {
   mqttWanted = false;
   clearTimeout(mqttRetryT);
   clearTimeout(peerRetryT);
-  if (mqtt) { mqtt.close(); mqtt = null; }
+  mqttProbes.forEach(c => { try { c.close(); } catch (e) { } });
+  mqttProbes = [];
+  if (mqtt) { try { mqtt.close(); } catch (e) { } mqtt = null; }
+  activeBroker = null;
+  brokerStat = {};
   if (conn) { try { conn.close(); } catch (e) { } conn = null; }
   if (peer) { try { peer.destroy(); } catch (e) { } peer = null; }
   peerRole = null;
@@ -410,6 +449,7 @@ function openSyncSheet() {
     { icon: '✉', label: room ? 'Show / copy invite code' : 'Create an invite', action: startInvite },
     { icon: '⇣', label: 'Join with a code', action: joinShared },
   ];
+  items.push({ icon: '📶', label: 'Connection status', action: openConn });
   if (room) {
     items.push({ icon: '⟳', label: 'Sync now', action: () => { lastSent = ''; startSync(); sendSnap(true); toast('Syncing…'); } });
   }

@@ -565,6 +565,43 @@ body.theme-anthropic-dark .flip-content {
   color: var(--text-dim);
 }
 
+/* ── Connection status screen ───────────────────────────────── */
+.conn-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 12px 12px;
+  border-bottom: 1px solid var(--border-dim);
+}
+
+.conn-row:last-child {
+  border-bottom: none;
+}
+
+.conn-row .sync-dot {
+  width: 9px;
+  height: 9px;
+}
+
+.conn-name {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.conn-active {
+  color: var(--accent);
+  font-size: 9px;
+}
+
+.conn-sub {
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: .5px;
+  flex-shrink: 0;
+}
+
 /* ── History screen ─────────────────────────────────────────── */
 .hist-bar {
   display: flex;
