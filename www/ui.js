@@ -1,5 +1,5 @@
 // ── App meta ─────────────────────────────────────────────────
-const APP_VERSION = '1.6';
+const APP_VERSION = '1.7';
 const REPO_URL = 'https://github.com/FLEXIY0/todo';
 
 function openAbout() {
@@ -51,6 +51,7 @@ function closeTopLayer() {
   if (historyView) { closeHistory(); return true; }
   if (settingsView) { closeSettings(); return true; }
   if (themesView) { closeThemes(); return true; }
+  if (connView) { closeConn(); return true; }
   if (spaceIndex > 0) { flipToSpace(0); return true; }
   return false;
 }
@@ -100,7 +101,7 @@ maskEl.addEventListener('click', () => closeDrawer());
 let pageDrag = 0, pageDragP = 0; // active page-flip swipe between spaces
 let backDrag = false;            // active "back" peel out of a nested screen
 
-function nestedView() { return subtaskView || historyView || settingsView || themesView; }
+function nestedView() { return subtaskView || historyView || settingsView || themesView || connView; }
 
 document.addEventListener('touchstart', (e) => {
   if (overlayOpen()) return;
