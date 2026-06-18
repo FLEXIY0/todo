@@ -892,6 +892,12 @@ body.theme-anthropic-dark .flip-content {
   background: var(--accent-xs);
 }
 
+/* held long enough that releasing now edits the text */
+.task-item.hold-edit {
+  background: var(--accent-xs);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
 .task-bullet {
   width: 6px;
   height: 6px;
@@ -963,8 +969,17 @@ body.theme-anthropic-dark .flip-content {
 /* ── Subtasks ───────────────────────────────────────────────── */
 .sub-bars {
   display: flex;
+  align-items: center;
   gap: 4px;
   margin-top: 6px;
+}
+
+.sub-more {
+  font-size: 10px;
+  letter-spacing: .5px;
+  color: var(--accent-dim);
+  margin-left: 3px;
+  white-space: nowrap;
 }
 
 .sub-bar {
@@ -1233,9 +1248,53 @@ body.theme-anthropic-dark .flip-content {
 
 .sheet-item .s-icon {
   width: 22px;
-  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-size: 16px;
   opacity: .85;
+  flex-shrink: 0;
+}
+
+/* ── Material icons ─────────────────────────────────────────── */
+.mi {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+  display: block;
+}
+
+.di-icon,
+.dc-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.di-icon .mi,
+.dc-icon .mi {
+  width: 19px;
+  height: 19px;
+}
+
+.sheet-item .s-icon .mi {
+  width: 20px;
+  height: 20px;
+}
+
+.add-task-icon .mi {
+  width: 12px;
+  height: 12px;
+}
+
+.sb-arrow {
+  display: inline-flex;
+  align-items: center;
+}
+
+.sb-arrow .mi {
+  width: 19px;
+  height: 19px;
 }
 
 /* ── Dialog ─────────────────────────────────────────────────── */

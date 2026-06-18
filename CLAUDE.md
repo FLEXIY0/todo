@@ -71,7 +71,13 @@ Category headers use `setupCategoryReorder()` (not `setupLongPress`): a long-pre
 Four themes — `classic` (default amber/dark-brown), `oled` (pure black/white), `anthropic` (light ivory/terracotta) and `anthropic-dark` (warm `#2C2C2A` dark with antique-terracotta accent), listed in `THEMES` in `app.js` and rendered by `renderThemes` (the drawer has one "Themes" item; adding a theme needs a `THEMES` entry, a `.theme-dot.<id>` swatch and a CSS var block). `applyTheme()` toggles `body.theme-*`. Fonts are two `settings` keys (`fontSize` s/m/l, `fontFamily` system/mono/serif) applied by `applyDisplay()` via the `--font-scale` and `--app-font` CSS vars; readable text uses `calc(<px> * var(--font-scale))`. Category frame thickness is the `--cat-bw` var.
 
 **Tap routing:**
-`onTaskTap` (app.js) makes a single tap toggle a plain task instantly (history log deferred past the double-tap window so a quick second tap can cancel it) or open subtasks for a task that has them; a double tap always opens the subtask screen. `setupTripleTap(el, cb)` fires on the 3rd quick tap — used on category headers (clear that category's completed) and empty space (clear the space's completed, wired in `ui.js`).
+`onTaskTap` (app.js) makes a single tap toggle a plain task instantly (history log deferred past the double-tap window so a quick second tap can cancel it) or open subtasks for a task that has them; a double tap always opens the subtask screen. `setupTripleTap(el, cb)` fires on the 3rd quick tap — used on category headers (clear that category's completed) and empty space (clear the space's completed, wired in `ui.js`). `setupHold(el, onEdit, onMenu)` is the two-stage long-press on tasks/subtasks: hold and release within ~1s → edit the text, keep holding past 1s → the long-press menu (with a vibration cue at the switch). The `holdConsumed` flag suppresses the trailing click so a hold doesn't also toggle.
+
+**Subtask stripes:**
+On the main screen a task's subtasks render as `.sub-bar` stripes, but only as many as fit the row width; the overflow collapses into a `.sub-more` "+N" counter (computed from `window.innerWidth` in `renderSpace`). Wishlist/tree mode shows the text instead.
+
+**Icons:**
+UI glyphs are inline Material (Google) SVGs bundled in `ui.js` (`MI` path map, `iconSvg(name)`, `EMOJI_MI` maps the old emoji → name). `openSheet` renders item icons via `renderGlyph`; static drawer items carry `data-icon="…"` filled by `fillIcons()` on init; render templates call `iconSvg('add'|'back')` directly. History diff signs (`+ - ~ ✓ ○ ↩ ⇄`) stay as text — they're journal notation, not icons.
 
 **Bottom sheet / dialog:**
 `openSheet(label, items)` and `openDialog(title, value, cb, isTask)` in `ui.js` are the only two modal primitives. All menus and confirmations go through these.
