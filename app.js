@@ -1109,23 +1109,18 @@ function onTaskTap(catId, taskId) {
 }
 
 // ── Multi-tap helper ─────────────────────────────────────────
-// Fires cb on the Nth quick tap (default 3) within a rolling window,
-// ignoring taps that moved too far (so it never eats a scroll/drag).
+// Fires cb on the Nth quick tap (default 3). Uses `click`, which fires
+// exactly once per tap on every device (touch and mouse) and never on a
+// scroll/drag — unlike touchend+mouseup, which double-counted synthetic
+// mouse events on real phones and made the count unreliable.
 function setupTripleTap(el, cb, n = 3) {
-  let count = 0, timer = null, sx = 0, sy = 0;
-  const startPt = e => { const p = e.touches ? e.touches[0] : e; sx = p.clientX; sy = p.clientY; };
-  const tap = e => {
-    const p = e.changedTouches ? e.changedTouches[0] : e;
-    if (Math.abs(p.clientX - sx) > 12 || Math.abs(p.clientY - sy) > 12) { count = 0; return; }
+  let count = 0, timer = null;
+  el.addEventListener('click', () => {
     count++;
     clearTimeout(timer);
     if (count >= n) { count = 0; cb(); return; }
-    timer = setTimeout(() => { count = 0; }, 460);
-  };
-  el.addEventListener('touchstart', startPt, { passive: true });
-  el.addEventListener('touchend', tap);
-  el.addEventListener('mousedown', startPt);
-  el.addEventListener('mouseup', tap);
+    timer = setTimeout(() => { count = 0; }, 600);
+  });
 }
 
 // ── Subtask screen ───────────────────────────────────────────

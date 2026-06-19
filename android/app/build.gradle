@@ -8,8 +8,8 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         // CI overrides these from the release tag / run number
-        versionCode (project.hasProperty('appVersionCode') ? project.property('appVersionCode').toInteger() : 13)
-        versionName (project.hasProperty('appVersionName') ? project.property('appVersionName') : '2.2')
+        versionCode (project.hasProperty('appVersionCode') ? project.property('appVersionCode').toInteger() : 14)
+        versionName (project.hasProperty('appVersionName') ? project.property('appVersionName') : '2.3')
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

@@ -1,5 +1,5 @@
 // ── App meta ─────────────────────────────────────────────────
-const APP_VERSION = '2.2';
+const APP_VERSION = '2.3';
 const REPO_URL = 'https://github.com/FLEXIY0/todo';
 
 // ── Material icons (Google standard, inline SVG, themeable) ──
@@ -361,7 +361,7 @@ mainEl.addEventListener('click', e => {
     }
     return;
   }
-  emptyTapTimer = setTimeout(() => { emptyTaps = 0; }, 460);
+  emptyTapTimer = setTimeout(() => { emptyTaps = 0; }, 600);
 });
 
 // ── Bottom Sheet ─────────────────────────────────────────────

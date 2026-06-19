@@ -69,6 +69,8 @@ body.theme-anthropic-dark {
 }
 
 body {
+  /* removes the WebView double-tap-zoom delay so rapid taps register */
+  touch-action: manipulation;
   background: var(--bg);
   color: var(--text);
   font-family: var(--app-font, Arial, sans-serif);
