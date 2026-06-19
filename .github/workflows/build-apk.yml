@@ -1,23 +1,30 @@
 name: Build APK
 
-# Builds a signed release APK. The APK is universal (the app is a Capacitor
-# WebView with no native libraries), so it runs on armv7, arm64 and x86 alike.
+# Builds a signed, universal release APK (the app is a Capacitor WebView
+# with no native libs, so one APK runs on armv7/arm64/x86 alike).
 #
-# - Push a tag like v1.2 → builds and publishes the APK to a GitHub Release
-# - Manual run (workflow_dispatch) → builds and uploads the APK as an artifact
+# Releases are automatic: every push to main is checked against APP_VERSION
+# in ui.js, and if no release exists for that version yet, the APK is built
+# and published as GitHub Release vX.Y (the tag is created by the runner).
+# Pushing a v* tag, or a manual run with a release_tag, also publishes.
 
 on:
   push:
+    branches: [main]
     tags: ['v*']
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Existing release tag to attach the APK to (optional)'
+        description: 'Release tag to build/attach (optional, e.g. v2.3)'
         required: false
         default: ''
 
 permissions:
   contents: write
+
+concurrency:
+  group: build-apk
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -25,40 +32,56 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Strips accidental whitespace from the input and derives the app
-      # version: tag vX.Y → versionName X.Y; versionCode = run number.
+      # Decide the version + whether to publish:
+      #  - tag push        → release that tag
+      #  - manual w/ input → release that tag
+      #  - push to main    → release vAPP_VERSION, but only if it doesn't exist
       - name: Resolve version
         id: ver
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          RAW="${{ inputs.release_tag || github.ref_name }}"
-          TAG="$(echo -n "$RAW" | tr -d '[:space:]')"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          if [[ "$TAG" == v* ]]; then
-            echo "name=${TAG#v}" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            TAG="${GITHUB_REF_NAME}"; RELEASE=true
+          elif [ -n "${{ inputs.release_tag }}" ]; then
+            TAG="$(echo -n "${{ inputs.release_tag }}" | tr -d '[:space:]')"; RELEASE=true
           else
-            echo "name=0.0.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+            NAME="$(grep -oE "APP_VERSION = '[^']+'" ui.js | head -1 | sed "s/.*'\(.*\)'.*/\1/")"
+            TAG="v${NAME}"
+            if gh release view "$TAG" >/dev/null 2>&1; then RELEASE=false; else RELEASE=true; fi
           fi
+          NAME="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
+          echo "Resolved tag=$TAG name=$NAME release=$RELEASE"
 
       - uses: actions/setup-java@v4
+        if: steps.ver.outputs.release == 'true'
         with:
           distribution: temurin
           java-version: '21'
 
       - uses: actions/setup-node@v4
+        if: steps.ver.outputs.release == 'true'
         with:
           node-version: '22'
           cache: npm
 
       - name: Install dependencies
+        if: steps.ver.outputs.release == 'true'
         run: npm ci
 
       - name: Build web assets
+        if: steps.ver.outputs.release == 'true'
         run: npm run build
 
       - name: Sync Capacitor
+        if: steps.ver.outputs.release == 'true'
         run: npx cap sync android
 
       - name: Build release APK
+        if: steps.ver.outputs.release == 'true'
         run: |
           cd android
           chmod +x gradlew
@@ -67,25 +90,26 @@ jobs:
             -PappVersionCode="${{ github.run_number }}"
 
       - name: Collect APK
+        if: steps.ver.outputs.release == 'true'
         run: cp android/app/build/outputs/apk/release/app-release.apk simple-todo.apk
 
       - uses: actions/upload-artifact@v4
+        if: steps.ver.outputs.release == 'true'
         with:
           name: simple-todo-apk
           path: simple-todo.apk
 
       - name: Publish GitHub Release
-        if: startsWith(steps.ver.outputs.tag, 'v')
+        if: steps.ver.outputs.release == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.ver.outputs.tag }}
-        # If the release already exists (e.g. created manually in the UI),
-        # attach/replace the APK instead of failing on creation.
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" simple-todo.apk --clobber
           else
             gh release create "$TAG" simple-todo.apk \
+              --target "$GITHUB_SHA" \
               --title "Simple Todo $TAG" \
               --generate-notes
           fi
