@@ -1,5 +1,5 @@
 // ── App meta ─────────────────────────────────────────────────
-const APP_VERSION = '2.0';
+const APP_VERSION = '2.1';
 const REPO_URL = 'https://github.com/FLEXIY0/todo';
 
 // ── Material icons (Google standard, inline SVG, themeable) ──
@@ -409,7 +409,7 @@ function openTaskSheet(catId, taskId) {
     { icon: '≡', label: 'Subtasks', action: () => openSubtasks(catId, taskId) },
     { icon: '✏️', label: 'Edit task',   action: () => promptEditTask(catId, taskId) },
   );
-  if (isWishlist(curSpace())) items.push(
+  if (hasPrices(curSpace())) items.push(
     { icon: '🏷', label: (task.price != null && task.price !== '') ? `Price: ${fmtPrice(Number(task.price))}` : 'Set price', action: () => promptSetPrice(catId, taskId) }
   );
   items.push(
