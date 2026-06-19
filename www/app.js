@@ -120,8 +120,9 @@ function spCats(sp, board) {
 }
 // subtask display style: stripes or tree
 function treeOn(sp) { return sp.shared ? sp.mode === 'wish' : !!sp.tree; }
-// wishlist boards carry per-task prices
-function isWishlist(sp) { return sp.id === 'sp_wish' || (sp.shared && sp.mode === 'wish'); }
+// any tree/nested-list board carries per-task prices (wishlist and any
+// other space switched to "tree" subtasks) — and only those
+function hasPrices(sp) { return treeOn(sp); }
 const CUR_PRE = { '$': 1, '£': 1, '¥': 1 }; // symbols that sit before the number
 function curSym() { return state.settings.currency || '₽'; }
 function fmtPrice(n) {
@@ -338,7 +339,7 @@ function renderSpace(container, space) {
     header.className = 'category-header';
     // wishlist: show the sum of task prices next to the counter
     let countTxt = `${doneN}/${cat.tasks.length}`;
-    if (isWishlist(space)) {
+    if (hasPrices(space)) {
       const sum = cat.tasks.reduce((a, t) => a + (Number(t.price) || 0), 0);
       if (sum > 0) countTxt += ` · ${fmtPrice(sum)}`;
     }
@@ -391,7 +392,7 @@ function renderSpace(container, space) {
           subsHtml = `<div class="sub-bars">${bars}${more ? `<span class="sub-more">+${more}</span>` : ''}</div>`;
         }
       }
-      const priceHtml = (isWishlist(space) && task.price != null && task.price !== '')
+      const priceHtml = (hasPrices(space) && task.price != null && task.price !== '')
         ? `<span class="task-price">${esc(fmtPrice(Number(task.price)))}</span>` : '';
       el.innerHTML = `<div class="task-bullet"></div><div class="task-text"><span class="strike-wrap">${esc(task.text)}</span>${subsHtml}</div>${priceHtml}`;
       // Single tap toggles (or opens subtasks if it has them); double tap
@@ -582,10 +583,10 @@ function renderSettings(container) {
   fonts.appendChild(fl);
   container.appendChild(fonts);
 
-  // ── Wishlist ──
+  // ── Prices (any tree-mode space) ──
   const wish = document.createElement('div');
   wish.className = 'category';
-  wish.innerHTML = `<div class="category-header"><span class="cat-line"></span><span class="category-name">Wishlist</span><span class="cat-line-mid"></span><span class="cat-line"></span></div>`;
+  wish.innerHTML = `<div class="category-header"><span class="cat-line"></span><span class="category-name">Prices</span><span class="cat-line-mid"></span><span class="cat-line"></span></div>`;
   const wl = document.createElement('div');
   wl.className = 'tasks';
   wl.appendChild(chipRow('Currency', [['₽', '₽'], ['$', '$'], ['€', '€'], ['£', '£'], ['¥', '¥']],
