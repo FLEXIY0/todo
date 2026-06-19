@@ -38,7 +38,10 @@ On a fresh install (`firstRun` = no saved state) the board starts empty and `ope
 Reordering is a dedicated mode (`reorderMode`), entered from the category menu ("Reorder categories"). It shows a drag handle (`.cat-handle`, ⠿) per category and a "Done" bar; `setupReorderDrag`/`beginHandleDrag` move a category by its handle (no long-press lift). Normal long-press on a header opens the category menu.
 
 **Top label:**
-`renderTabs` shows only the *current* space's name (centered), never other spaces' labels — even inactive. Hidden when that space's `tabDot` is set or on any nested screen.
+`renderTabs`: if *every* visible space has its label enabled, all show as tabs (tap to switch); if at least one is hidden (`tabDot`), only the *current* space's label is shown (or nothing if it's hidden). Hidden on any nested screen.
+
+**Wishlist prices:**
+Wishlist boards (`isWishlist(sp)` = `sp_wish` or the shared `wish` board) carry a per-task `price` (number). Set from the task menu ("Set price", wishlist only), shown as an accent pill next to the task (`fmtPrice` uses `settings.currency` from the Settings → Wishlist chip row: ₽ $ € £ ¥); the category counter appends the sum of its task prices. `mergeBoards` syncs `price` like the other task fields.
 
 **Spaces / page flip:**
 `spaceIndex` indexes into `visSpaces()` (spaces filtered by `settings.wishlistOn/sharedOn`; the shared space is always last; `cats()` = current space's categories). Horizontal swipes drive a finger-controlled page-curl (`flipDragStart/Move/End` peeling a `.flip-page` layer from the corner); `flipTo(dir, mutate)` is the programmatic variant for the subtask/history/settings screens, and `flipBackDragStart/End` is the finger-driven "back" peel out of those nested screens (rightward swipe). Tabs in `#spaceTabs` jump via `flipToSpace()`. The single horizontal-gesture handler in `ui.js` routes a swipe by context: a rightward swipe opens the drawer only on the first space (full-screen, not just the edge), peels back out of a nested screen, or otherwise flips between spaces. In-progress drags (`backDrag`/`pageDrag`/`swActive`) are continued before any new gesture is re-decided. `settleFlip()` instantly finishes an in-flight peel tween so a fast follow-up swipe isn't dropped during the ~420ms animation.

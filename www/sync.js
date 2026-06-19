@@ -373,7 +373,7 @@ function mergeBoards(rBoards, rTombs) {
         const lt = lc.tasks.find(t => t.id === rt.id);
         if (!lt) lc.tasks.push(rt);
         else if ((rt.mt || 0) > (lt.mt || 0)) {
-          lt.text = rt.text; lt.done = rt.done; lt.subtasks = rt.subtasks; lt.mt = rt.mt;
+          lt.text = rt.text; lt.done = rt.done; lt.subtasks = rt.subtasks; lt.price = rt.price; lt.mt = rt.mt;
         }
       });
     });

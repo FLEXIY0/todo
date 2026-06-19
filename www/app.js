@@ -73,7 +73,7 @@ const state = {
     { id: 'sp_wish', name: 'Wishlist', categories: [], tree: true },
     { id: 'sp_shared', name: 'Shared', shared: true, mode: 'todo', boards: { todo: [], wish: [] } },
   ],
-  settings: { wishlistOn: true, sharedOn: true, historyLimit: 200, fontSize: 'm', fontFamily: 'system' },
+  settings: { wishlistOn: true, sharedOn: true, historyLimit: 200, fontSize: 'm', fontFamily: 'system', currency: '₽' },
   history: [],
   sync: { room: null, tombs: {} },
 };
@@ -120,6 +120,15 @@ function spCats(sp, board) {
 }
 // subtask display style: stripes or tree
 function treeOn(sp) { return sp.shared ? sp.mode === 'wish' : !!sp.tree; }
+// wishlist boards carry per-task prices
+function isWishlist(sp) { return sp.id === 'sp_wish' || (sp.shared && sp.mode === 'wish'); }
+const CUR_PRE = { '$': 1, '£': 1, '¥': 1 }; // symbols that sit before the number
+function curSym() { return state.settings.currency || '₽'; }
+function fmtPrice(n) {
+  const s = curSym();
+  const num = (Math.round(n * 100) / 100).toLocaleString('en-US').replace(/,/g, ' ');
+  return CUR_PRE[s] ? s + num : num + ' ' + s;
+}
 
 // Hybrid logical clock: monotonic timestamp that never goes backwards
 // relative to anything we've seen from other devices. This keeps
@@ -272,16 +281,30 @@ function renderCurrentInto(container) {
 
 function renderTabs() {
   const el = document.getElementById('spaceTabs');
-  const sp = curSpace();
-  // only the current space's label is shown — other pages' labels never
-  // appear here (not even as inactive tabs); hidden if its label is off
-  const hidden = subtaskView || historyView || settingsView || themesView || connView || !sp || sp.tabDot;
-  el.style.display = hidden ? 'none' : 'flex';
+  const vis = visSpaces();
+  const cur = curSpace();
+  const nested = subtaskView || historyView || settingsView || themesView || connView;
+  if (nested || !cur) { el.style.display = 'none'; el.innerHTML = ''; return; }
+
   el.innerHTML = '';
-  if (hidden) return;
+  // if every space's label is enabled → show them all as tabs;
+  // if at least one is hidden → show only the current page's label
+  if (vis.length && vis.every(sp => !sp.tabDot)) {
+    el.style.display = 'flex';
+    vis.forEach((sp, i) => {
+      const t = document.createElement('div');
+      t.className = 'space-tab' + (i === spaceIndex ? ' active' : '');
+      t.textContent = sp.name;
+      t.addEventListener('click', () => flipToSpace(i));
+      el.appendChild(t);
+    });
+    return;
+  }
+  if (cur.tabDot) { el.style.display = 'none'; return; }
+  el.style.display = 'flex';
   const t = document.createElement('div');
   t.className = 'space-tab active';
-  t.textContent = sp.name;
+  t.textContent = cur.name;
   el.appendChild(t);
 }
 
@@ -313,7 +336,13 @@ function renderSpace(container, space) {
     const doneN = cat.tasks.filter(t => t.done).length;
     const header = document.createElement('div');
     header.className = 'category-header';
-    header.innerHTML = `<span class="cat-line"></span><span class="category-name">${esc(cat.name)}</span><span class="cat-line-mid"></span><span class="category-count">${doneN}/${cat.tasks.length}</span><span class="cat-line"></span>`;
+    // wishlist: show the sum of task prices next to the counter
+    let countTxt = `${doneN}/${cat.tasks.length}`;
+    if (isWishlist(space)) {
+      const sum = cat.tasks.reduce((a, t) => a + (Number(t.price) || 0), 0);
+      if (sum > 0) countTxt += ` · ${fmtPrice(sum)}`;
+    }
+    header.innerHTML = `<span class="cat-line"></span><span class="category-name">${esc(cat.name)}</span><span class="cat-line-mid"></span><span class="category-count">${esc(countTxt)}</span><span class="cat-line"></span>`;
     if (reorderMode) {
       catEl.classList.add('reordering');
       const handle = document.createElement('span');
@@ -362,7 +391,9 @@ function renderSpace(container, space) {
           subsHtml = `<div class="sub-bars">${bars}${more ? `<span class="sub-more">+${more}</span>` : ''}</div>`;
         }
       }
-      el.innerHTML = `<div class="task-bullet"></div><div class="task-text"><span class="strike-wrap">${esc(task.text)}</span>${subsHtml}</div>`;
+      const priceHtml = (isWishlist(space) && task.price != null && task.price !== '')
+        ? `<span class="task-price">${esc(fmtPrice(Number(task.price)))}</span>` : '';
+      el.innerHTML = `<div class="task-bullet"></div><div class="task-text"><span class="strike-wrap">${esc(task.text)}</span>${subsHtml}</div>${priceHtml}`;
       // Single tap toggles (or opens subtasks if it has them); double tap
       // always opens the nested subtask screen — see onTaskTap.
       el.addEventListener('click', () => onTaskTap(cat.id, task.id));
@@ -550,6 +581,21 @@ function renderSettings(container) {
     }));
   fonts.appendChild(fl);
   container.appendChild(fonts);
+
+  // ── Wishlist ──
+  const wish = document.createElement('div');
+  wish.className = 'category';
+  wish.innerHTML = `<div class="category-header"><span class="cat-line"></span><span class="category-name">Wishlist</span><span class="cat-line-mid"></span><span class="cat-line"></span></div>`;
+  const wl = document.createElement('div');
+  wl.className = 'tasks';
+  wl.appendChild(chipRow('Currency', [['₽', '₽'], ['$', '$'], ['€', '€'], ['£', '£'], ['¥', '¥']],
+    state.settings.currency, v => {
+      state.settings.currency = v;
+      logH('~', `Currency → ${v}`);
+      render();
+    }));
+  wish.appendChild(wl);
+  container.appendChild(wish);
 }
 
 // a labelled row of mutually-exclusive selectable chips
@@ -1429,6 +1475,23 @@ function promptEditTask(catId, taskId) {
     stamp(task);
     render();
   }, true);
+}
+
+function promptSetPrice(catId, taskId) {
+  const task = cats().find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
+  if (!task) return;
+  openDialog(`Price in ${curSym()} — leave empty to clear`, task.price != null ? String(task.price) : '', val => {
+    const n = parseFloat(String(val).replace(',', '.').replace(/[^\d.]/g, ''));
+    if (!String(val).trim() || isNaN(n)) {
+      delete task.price;
+      logH('~', `Cleared price for "${trunc(task.text)}"`);
+    } else {
+      task.price = n;
+      logH('~', `Price ${fmtPrice(n)} for "${trunc(task.text)}"`);
+    }
+    stamp(task);
+    render();
+  }, false);
 }
 
 function deleteTask(catId, taskId) {
