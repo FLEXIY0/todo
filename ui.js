@@ -1,5 +1,5 @@
 // ── App meta ─────────────────────────────────────────────────
-const APP_VERSION = '2.1';
+const APP_VERSION = '2.2';
 const REPO_URL = 'https://github.com/FLEXIY0/todo';
 
 // ── Material icons (Google standard, inline SVG, themeable) ──
@@ -341,12 +341,21 @@ mainEl.addEventListener('mousemove', e => {
 // triple tap on empty space clears all completed in the current space
 let emptyTaps = 0, emptyTapTimer = null;
 mainEl.addEventListener('click', e => {
-  if (overlayOpen() || nestedView() || !isEmptySpace(e.target)) { emptyTaps = 0; return; }
+  // allowed on a plain space, or inside the subtask screen (clears that
+  // task's completed subtasks); blocked on the other nested screens
+  const inSub = subtaskView && !historyView && !settingsView && !themesView && !connView;
+  if (overlayOpen() || (nestedView() && !inSub) || !isEmptySpace(e.target)) { emptyTaps = 0; return; }
   emptyTaps++;
   clearTimeout(emptyTapTimer);
   if (emptyTaps >= 3) {
     emptyTaps = 0;
-    if (cats().some(cat => cat.tasks.some(t => t.done))) {
+    if (inSub) {
+      const t = cats().find(c => c.id === subtaskView.catId)?.tasks.find(t => t.id === subtaskView.taskId);
+      if (t && t.subtasks && t.subtasks.some(s => s.done)) {
+        navigator.vibrate && navigator.vibrate(20);
+        clearCompletedSubtasks(subtaskView.catId, subtaskView.taskId);
+      }
+    } else if (cats().some(cat => cat.tasks.some(t => t.done))) {
       navigator.vibrate && navigator.vibrate(20);
       clearAllCompleted();
     }

@@ -208,6 +208,15 @@ function restoreH(entryId) {
   switch (d.k) {
     case 'task_del': revive(findCat(d.catId, d.catName), d.task); break;
     case 'tasks_clear': d.items.forEach(it => revive(findCat(it.catId, it.catName), it.task)); break;
+    case 'subs_clear': {
+      const t = arr.find(c => c.id === d.catId)?.tasks.find(t => t.id === d.taskId);
+      if (t) {
+        t.subtasks = t.subtasks || [];
+        d.subs.forEach(s => { if (!t.subtasks.some(x => x.id === s.id)) t.subtasks.push(s); });
+        syncParentDone(t); stamp(t);
+      }
+      break;
+    }
     case 'cat_del':
       if (!arr.some(c => c.id === d.category.id)) {
         d.category.mt = nextMt();
@@ -1142,6 +1151,10 @@ function renderSubtasks(container) {
   const header = document.createElement('div');
   header.className = 'category-header';
   header.innerHTML = `<span class="cat-line"></span><span class="category-name">${esc(name)}</span><span class="cat-line-mid"></span><span class="category-count">${doneN}/${subs.length}</span><span class="cat-line"></span>`;
+  // triple tap on the subtask header clears completed subtasks
+  setupTripleTap(header, () => {
+    if (subs.some(s => s.done)) { navigator.vibrate && navigator.vibrate(20); clearCompletedSubtasks(cat.id, task.id); }
+  });
   catEl.appendChild(header);
 
   const tasksEl = document.createElement('div');
@@ -1387,6 +1400,32 @@ function clearCompletedTasks(catId) {
     stamp(cat);
     render();
   }, totalTime);
+}
+
+// clear completed subtasks of a task (used by triple-tap on the subtask screen)
+function clearCompletedSubtasks(catId, taskId) {
+  const task = cats().find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
+  if (!task || !task.subtasks) return;
+  const done = task.subtasks.filter(s => s.done);
+  if (!done.length) return;
+
+  logH('-', `Cleared ${done.length} completed subtasks in "${trunc(task.text)}"`,
+    Object.assign({ k: 'subs_clear', catId, taskId, subs: done }, histCtx()));
+
+  const STAGGER = 75, ANIM_DUR = 2000;
+  done.forEach((sub, i) => {
+    if (animTimers[sub.id]) { clearTimeout(animTimers[sub.id]); delete animTimers[sub.id]; }
+    const el = document.querySelector(`.task-item[data-id="${sub.id}"]`);
+    if (!el) return;
+    el.style.animationDelay = `${i * STAGGER}ms`;
+    el.classList.add('slide-out');
+  });
+  setTimeout(() => {
+    task.subtasks = task.subtasks.filter(s => !s.done);
+    syncParentDone(task);
+    stamp(task);
+    render();
+  }, (done.length - 1) * STAGGER + ANIM_DUR);
 }
 
 function clearAllCompleted() {
