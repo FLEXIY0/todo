@@ -1,5 +1,5 @@
 // ── App meta ─────────────────────────────────────────────────
-const APP_VERSION = '2.4';
+const APP_VERSION = '2.5';
 const REPO_URL = 'https://github.com/FLEXIY0/todo';
 
 // ── Material icons (Google standard, inline SVG, themeable) ──
@@ -34,6 +34,7 @@ const MI = {
   drag: 'M11 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm-2-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z',
   school: 'M5 13.18v4L12 21l7-3.82v-4L12 17l-7-3.82zM12 3 1 9l11 6 9-4.91V17h2V9L12 3z',
   tag: 'M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58s1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41s-.23-1.06-.59-1.42zM5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7z',
+  search: 'M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z',
 };
 // emoji currently passed around → Material icon name
 const EMOJI_MI = {
@@ -154,6 +155,7 @@ function closeTopLayer() {
   if (settingsView) { closeSettings(); return true; }
   if (themesView) { closeThemes(); return true; }
   if (connView) { closeConn(); return true; }
+  if (searchView) { closeSearch(); return true; }
   if (spaceIndex > 0) { flipToSpace(0); return true; }
   return false;
 }
@@ -202,8 +204,20 @@ maskEl.addEventListener('click', () => closeDrawer());
 
 let pageDrag = 0, pageDragP = 0; // active page-flip swipe between spaces
 let backDrag = false;            // active "back" peel out of a nested screen
+let pullActive = false, pullP = 0; // active pull-down-from-top → search
 
-function nestedView() { return subtaskView || historyView || settingsView || themesView || connView; }
+const PULL_MAX = 130;            // px of pull that maps to a full reveal
+function setPull(p) {
+  const el = document.getElementById('pullSearch');
+  if (!el) return;
+  el.style.transform = `translateY(${-60 + p * 66}px)`;
+  el.style.opacity = String(Math.min(1, p * 1.3));
+  el.classList.toggle('ready', p >= 1);
+  const t = el.querySelector('.ps-txt');
+  if (t) t.textContent = p >= 1 ? 'Release to search' : 'Pull to search';
+}
+
+function nestedView() { return subtaskView || historyView || settingsView || themesView || connView || searchView; }
 
 document.addEventListener('touchstart', (e) => {
   if (overlayOpen()) return;
@@ -219,6 +233,17 @@ document.addEventListener('touchmove', (e) => {
   if (!swDir) {
     if (Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
     swDir = Math.abs(dx) >= Math.abs(dy) ? 'h' : 'v';
+  }
+  // vertical pull-down at the very top of the list → reveal search
+  if (swDir === 'v') {
+    if (!pullActive && dy > 0 && !drawerOpen && !nestedView() && window.scrollY <= 0) pullActive = true;
+    if (pullActive) {
+      if (dy <= 0) { pullActive = false; pullP = 0; setPull(0); return; }
+      e.preventDefault();
+      pullP = clampP(dy / PULL_MAX);
+      setPull(pullP);
+    }
+    return;
   }
   if (swDir !== 'h') return;
   const span = window.innerWidth * 0.7;
@@ -268,7 +293,18 @@ document.addEventListener('touchmove', (e) => {
   flipDragMove(pageDragP);
 }, { passive: false });
 
+document.addEventListener('touchcancel', () => {
+  if (pullActive) { pullActive = false; pullP = 0; setPull(0); }
+}, { passive: true });
+
 document.addEventListener('touchend', (e) => {
+  if (pullActive) {
+    pullActive = false;
+    const open = pullP >= 1;
+    pullP = 0; setPull(0);
+    if (open) openSearch();
+    return;
+  }
   if (backDrag) {
     flipBackDragEnd(pageDragP > 0.22);
     backDrag = false; pageDragP = 0;

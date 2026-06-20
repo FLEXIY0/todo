@@ -1686,3 +1686,117 @@ body.theme-anthropic-dark .flip-content {
 .d-btn.confirm:active {
   filter: brightness(.85);
 }
+
+/* ── Pull-to-search hint ──────────────────────────────────────── */
+#pullSearch {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 13px;
+  letter-spacing: .3px;
+  color: var(--text-dim);
+  transform: translateY(-60px);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 6;
+}
+#pullSearch.ready {
+  color: var(--accent);
+}
+#pullSearch .mi {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+/* ── Search screen ────────────────────────────────────────────── */
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 4px 12px;
+  border-bottom: 1px solid var(--border-dim);
+}
+.search-ico {
+  display: flex;
+  color: var(--accent-dim);
+}
+.search-ico .mi {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+}
+.search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: calc(15px * var(--font-scale));
+  font-family: var(--app-font);
+  -webkit-user-select: text;
+  user-select: text;
+}
+.search-input::placeholder {
+  color: var(--text-dim);
+}
+.search-results {
+  padding-top: 6px;
+}
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 4px;
+  border-bottom: 1px solid var(--border-dim);
+  cursor: pointer;
+  transition: background .15s;
+}
+.search-row:active {
+  background: var(--accent-xs);
+}
+.s-icon {
+  display: flex;
+  color: var(--accent-dim);
+  flex-shrink: 0;
+}
+.s-icon .mi {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+.search-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.search-main {
+  color: var(--text);
+  font-size: calc(14px * var(--font-scale));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.search-sub {
+  color: var(--text-dim);
+  font-size: calc(11px * var(--font-scale));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* highlight an item jumped to from search */
+.flash {
+  animation: flashHi 1.5s ease-out;
+}
+@keyframes flashHi {
+  0%, 30% { background: var(--accent-dim); }
+  100% { background: transparent; }
+}

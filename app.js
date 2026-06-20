@@ -95,6 +95,8 @@ let historyView = false;  // history journal screen
 let settingsView = false; // settings screen
 let themesView = false;   // themes picker screen
 let connView = false;     // sync connection status screen
+let searchView = false;   // search screen (pull down from the top to open)
+let searchQuery = '';
 let reorderMode = false;  // category drag-to-reorder mode (toggled from the category menu)
 
 const strikeForwardSet = new Set();
@@ -133,12 +135,12 @@ function fmtPrice(n) {
   const num = (Math.round(n * 100) / 100).toLocaleString('en-US').replace(/,/g, ' ');
   return CUR_PRE[s] ? s + num : num + ' ' + s;
 }
-// rolled-up price of a task: sum of its subtasks' prices, or its own leaf
-// price when it has none. Prices live on the leaves (subtasks / leaf tasks).
+// rolled-up price used for SUMS (category, task, header): completed
+// (crossed-out) leaves are excluded, so checking an item off subtracts it.
 function taskPrice(task) {
   if (task.subtasks && task.subtasks.length)
-    return task.subtasks.reduce((a, s) => a + (Number(s.price) || 0), 0);
-  return Number(task.price) || 0;
+    return task.subtasks.reduce((a, s) => a + (s.done ? 0 : (Number(s.price) || 0)), 0);
+  return task.done ? 0 : (Number(task.price) || 0);
 }
 
 // Hybrid logical clock: monotonic timestamp that never goes backwards
@@ -291,6 +293,7 @@ function render() {
 
 function renderCurrentInto(container) {
   container.innerHTML = '';
+  if (searchView) return renderSearch(container);
   if (themesView) return renderThemes(container);
   if (connView) return renderConn(container);
   if (historyView) return renderHistory(container);
@@ -303,7 +306,7 @@ function renderTabs() {
   const el = document.getElementById('spaceTabs');
   const vis = visSpaces();
   const cur = curSpace();
-  const nested = subtaskView || historyView || settingsView || themesView || connView;
+  const nested = subtaskView || historyView || settingsView || themesView || connView || searchView;
   if (nested || !cur) { el.style.display = 'none'; el.innerHTML = ''; return; }
 
   el.innerHTML = '';
@@ -416,10 +419,11 @@ function renderSpace(container, space) {
           subsHtml = `<div class="sub-bars">${bars}${more ? `<span class="sub-more">+${more}</span>` : ''}</div>`;
         }
       }
-      // task pill = its leaf price, or (if it has subtasks) their sum
-      const tp = priced ? taskPrice(task) : 0;
-      const priceHtml = (priced && tp > 0)
-        ? `<span class="task-price">${esc(fmtPrice(tp))}</span>` : '';
+      // pill = a leaf task's own price (struck when done), or for a task
+      // with subtasks the sum of its not-yet-done subtasks
+      const pillVal = subs.length ? taskPrice(task) : (Number(task.price) || 0);
+      const priceHtml = (priced && pillVal > 0)
+        ? `<span class="task-price">${esc(fmtPrice(pillVal))}</span>` : '';
       el.innerHTML = `<div class="task-bullet"></div><div class="task-text"><span class="strike-wrap">${esc(task.text)}</span>${subsHtml}</div>${priceHtml}`;
       // Single tap toggles (or opens subtasks if it has them); double tap
       // always opens the nested subtask screen — see onTaskTap.
@@ -774,6 +778,101 @@ function openConn() {
 }
 function closeConn() { flipTo(-1, () => { connView = false; }); }
 
+// ── Search screen ────────────────────────────────────────────
+// Searches tasks, subtasks and category names across all visible spaces.
+// Opened by pulling down from the top of the list (or the drawer item).
+function openSearch() {
+  if (searchView) return;
+  closeDrawer();
+  searchQuery = '';
+  armBack();
+  flipTo(1, () => { searchView = true; subtaskView = null; historyView = settingsView = themesView = connView = false; });
+}
+function closeSearch() { flipTo(-1, () => { searchView = false; searchQuery = ''; }); }
+
+function renderSearch(container) {
+  const bar = document.createElement('div');
+  bar.className = 'search-bar';
+  bar.innerHTML = `<span class="search-ico">${iconSvg('search')}</span>`;
+  const input = document.createElement('input');
+  input.className = 'search-input';
+  input.type = 'text';
+  input.placeholder = 'Search all spaces…';
+  input.value = searchQuery;
+  input.addEventListener('input', () => { searchQuery = input.value; renderSearchResults(); });
+  input.addEventListener('keydown', e => { if (e.key === 'Escape') closeSearch(); });
+  bar.appendChild(input);
+  const done = document.createElement('span');
+  done.className = 'sync-btn';
+  done.textContent = 'Done';
+  done.addEventListener('click', closeSearch);
+  bar.appendChild(done);
+  container.appendChild(bar);
+
+  const res = document.createElement('div');
+  res.id = 'searchResults';
+  res.className = 'search-results';
+  container.appendChild(res);
+  renderSearchResults();
+  setTimeout(() => input.focus(), 120);
+}
+
+function searchHits(q) {
+  const out = [];
+  visSpaces().forEach(sp => {
+    const boards = sp.shared ? [['todo', spCats(sp, 'todo')], ['wish', spCats(sp, 'wish')]] : [[null, sp.categories]];
+    boards.forEach(([board, list]) => {
+      list.forEach(cat => {
+        if (cat.name.toLowerCase().includes(q)) out.push({ type: 'cat', sp, board, cat, text: cat.name });
+        cat.tasks.forEach(t => {
+          if (t.text.toLowerCase().includes(q)) out.push({ type: 'task', sp, board, cat, task: t, text: t.text });
+          (t.subtasks || []).forEach(s => {
+            if (s.text.toLowerCase().includes(q)) out.push({ type: 'sub', sp, board, cat, task: t, sub: s, text: s.text });
+          });
+        });
+      });
+    });
+  });
+  return out;
+}
+
+function renderSearchResults() {
+  const res = document.getElementById('searchResults');
+  if (!res) return;
+  res.innerHTML = '';
+  const q = searchQuery.trim().toLowerCase();
+  if (!q) { res.innerHTML = '<div class="empty-hint">Type to search tasks, subtasks and categories</div>'; return; }
+  const hits = searchHits(q);
+  if (!hits.length) { res.innerHTML = '<div class="empty-hint">Nothing found</div>'; return; }
+  hits.slice(0, 120).forEach(r => {
+    const row = document.createElement('div');
+    row.className = 'search-row';
+    const where = `${esc(r.sp.name)}${r.board ? ' · ' + (r.board === 'wish' ? 'Wishlist' : 'To-Do') : ''} › ${esc(r.cat.name)}`;
+    const icon = r.type === 'cat' ? 'list' : r.type === 'sub' ? 'tree' : 'check';
+    row.innerHTML = `<span class="s-icon">${iconSvg(icon)}</span><span class="search-text"><span class="search-main">${esc(r.text)}</span><span class="search-sub">${where}</span></span>`;
+    row.addEventListener('click', () => gotoResult(r));
+    res.appendChild(row);
+  });
+}
+
+function gotoResult(r) {
+  const idx = visSpaces().indexOf(r.sp);
+  if (r.sp.shared && r.board) r.sp.mode = r.board;
+  searchView = false; searchQuery = '';
+  if (idx >= 0) spaceIndex = idx;
+  render();
+  if (r.type === 'sub') { setTimeout(() => { openSubtasks(r.cat.id, r.task.id); setTimeout(() => flashItem(r.sub.id), 480); }, 60); }
+  else setTimeout(() => flashItem(r.type === 'cat' ? r.cat.id : r.task.id, r.type === 'cat'), 60);
+}
+
+function flashItem(id, isCat) {
+  const el = document.querySelector(isCat ? `.category[data-cat-id="${id}"]` : `.task-item[data-id="${id}"]`);
+  if (!el) return;
+  el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  el.classList.add('flash');
+  setTimeout(() => el.classList.remove('flash'), 1500);
+}
+
 // Per-space options: rename, subtask style, tab label, enable, delete
 function openSpaceSheet(spId) {
   const sp = state.spaces.find(s => s.id === spId);
@@ -991,6 +1090,7 @@ function flipBackDragStart() {
   else if (settingsView) { restore = () => { settingsView = true; }; settingsView = false; }
   else if (themesView) { restore = () => { themesView = true; }; themesView = false; }
   else if (connView) { restore = () => { connView = true; }; connView = false; }
+  else if (searchView) { restore = () => { searchView = true; }; searchView = false; }
   else return false;
   buildPeelLayer(-1);
   flip.backRestore = restore;
@@ -1340,7 +1440,10 @@ function updateSubtaskCount() {
   if (!subtaskView) return;
   const task = cats().find(c => c.id === subtaskView.catId)?.tasks.find(t => t.id === subtaskView.taskId);
   const countEl = document.querySelector('.category.subtask-view .category-count');
-  if (task && countEl) countEl.textContent = `${task.subtasks.filter(s => s.done).length}/${task.subtasks.length}`;
+  if (!task || !countEl) return;
+  let txt = `${task.subtasks.filter(s => s.done).length}/${task.subtasks.length}`;
+  if (hasPrices(curSpace())) { const sum = taskPrice(task); if (sum > 0) txt += ` · ${fmtPrice(sum)}`; }
+  countEl.textContent = txt;
 }
 
 function promptAddSubtask(catId, taskId) {
@@ -1485,10 +1588,15 @@ function updateCategoryCount(catId) {
   const cat = cats().find(c => c.id === catId);
   if (!cat) return;
   const doneN = cat.tasks.filter(t => t.done).length;
+  let txt = `${doneN}/${cat.tasks.length}`;
+  if (hasPrices(curSpace())) {
+    const sum = cat.tasks.reduce((a, t) => a + taskPrice(t), 0);
+    if (sum > 0) txt += ` · ${fmtPrice(sum)}`;
+  }
   const catEl = document.querySelector(`.category[data-cat-id="${catId}"]`);
   if (catEl) {
     const countEl = catEl.querySelector('.category-count');
-    if (countEl) countEl.textContent = `${doneN}/${cat.tasks.length}`;
+    if (countEl) countEl.textContent = txt;
   }
 }
 

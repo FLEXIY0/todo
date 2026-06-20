@@ -13,6 +13,9 @@
   <!-- DRAWER -->
   <div id="drawer">
     <div class="drawer-section">Menu</div>
+    <div class="drawer-item" onclick="openSearch()">
+      <span class="di-icon" data-icon="search"></span> Search
+    </div>
     <div class="drawer-item" onclick="openThemes()">
       <span class="di-icon" data-icon="palette"></span> Themes
     </div>
@@ -30,6 +33,12 @@
     <div class="drawer-clear" onclick="confirmClearAll()">
       <span class="dc-icon" data-icon="delete"></span> Clear All
     </div>
+  </div>
+
+  <!-- PULL-TO-SEARCH HINT -->
+  <div id="pullSearch">
+    <span class="ps-ico" data-icon="search"></span>
+    <span class="ps-txt">Pull to search</span>
   </div>
 
   <!-- MAIN -->
