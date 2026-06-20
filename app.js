@@ -9,6 +9,7 @@ function saveState() {
     settings: state.settings,
     history: state.history,
     sync: state.sync,
+    draft: state.draft,
   }));
   if (typeof maybeSync === 'function') maybeSync();
 }
@@ -40,6 +41,7 @@ function loadState() {
     if (saved.settings) Object.assign(state.settings, saved.settings);
     if (Array.isArray(saved.history)) state.history = saved.history;
     if (saved.sync) Object.assign(state.sync, saved.sync);
+    if (typeof saved.draft === 'string') state.draft = saved.draft;
     if (saved.theme) state.theme = saved.theme;
   } catch (e) { }
 }
@@ -76,6 +78,7 @@ const state = {
   settings: { wishlistOn: true, sharedOn: true, historyLimit: 200, fontSize: 'm', fontFamily: 'system', currency: '₽' },
   history: [],
   sync: { room: null, tombs: {} },
+  draft: '',
 };
 
 // Themes: id → drawer label/sub (the .theme-dot.<id> swatch lives in CSS)
@@ -129,6 +132,13 @@ function fmtPrice(n) {
   const s = curSym();
   const num = (Math.round(n * 100) / 100).toLocaleString('en-US').replace(/,/g, ' ');
   return CUR_PRE[s] ? s + num : num + ' ' + s;
+}
+// rolled-up price of a task: sum of its subtasks' prices, or its own leaf
+// price when it has none. Prices live on the leaves (subtasks / leaf tasks).
+function taskPrice(task) {
+  if (task.subtasks && task.subtasks.length)
+    return task.subtasks.reduce((a, s) => a + (Number(s.price) || 0), 0);
+  return Number(task.price) || 0;
 }
 
 // Hybrid logical clock: monotonic timestamp that never goes backwards
@@ -346,10 +356,10 @@ function renderSpace(container, space) {
     const doneN = cat.tasks.filter(t => t.done).length;
     const header = document.createElement('div');
     header.className = 'category-header';
-    // wishlist: show the sum of task prices next to the counter
+    // tree mode: category shows the sum of its tasks' rolled-up prices
     let countTxt = `${doneN}/${cat.tasks.length}`;
     if (hasPrices(space)) {
-      const sum = cat.tasks.reduce((a, t) => a + (Number(t.price) || 0), 0);
+      const sum = cat.tasks.reduce((a, t) => a + taskPrice(t), 0);
       if (sum > 0) countTxt += ` · ${fmtPrice(sum)}`;
     }
     header.innerHTML = `<span class="cat-line"></span><span class="category-name">${esc(cat.name)}</span><span class="cat-line-mid"></span><span class="category-count">${esc(countTxt)}</span><span class="cat-line"></span>`;
@@ -385,11 +395,16 @@ function renderSpace(container, space) {
       el.dataset.id = task.id;
       const subs = task.subtasks || [];
       let subsHtml = '';
+      const priced = hasPrices(space);
       if (subs.length) {
         if (tree) {
-          // tree: the actual subtask texts, indented with branch glyphs
-          subsHtml = `<div class="sub-tree">${subs.map((s, i) =>
-            `<div class="sub-twig${s.done ? ' done' : ''}"><span class="tw-br">${i === subs.length - 1 ? '└' : '├'}</span><span class="tw-txt">${esc(s.text)}</span></div>`).join('')}</div>`;
+          // tree: the actual subtask texts, with branch glyphs and (in a
+          // priced space) each subtask's own price next to it
+          subsHtml = `<div class="sub-tree">${subs.map((s, i) => {
+            const sp = (priced && s.price != null && s.price !== '')
+              ? `<span class="tw-price">${esc(fmtPrice(Number(s.price)))}</span>` : '';
+            return `<div class="sub-twig${s.done ? ' done' : ''}"><span class="tw-br">${i === subs.length - 1 ? '└' : '├'}</span><span class="tw-txt">${esc(s.text)}</span>${sp}</div>`;
+          }).join('')}</div>`;
         } else {
           // stripes: one bar per subtask, but never past the screen edge —
           // overflow collapses into a "+N" counter for the rest
@@ -401,8 +416,10 @@ function renderSpace(container, space) {
           subsHtml = `<div class="sub-bars">${bars}${more ? `<span class="sub-more">+${more}</span>` : ''}</div>`;
         }
       }
-      const priceHtml = (hasPrices(space) && task.price != null && task.price !== '')
-        ? `<span class="task-price">${esc(fmtPrice(Number(task.price)))}</span>` : '';
+      // task pill = its leaf price, or (if it has subtasks) their sum
+      const tp = priced ? taskPrice(task) : 0;
+      const priceHtml = (priced && tp > 0)
+        ? `<span class="task-price">${esc(fmtPrice(tp))}</span>` : '';
       el.innerHTML = `<div class="task-bullet"></div><div class="task-text"><span class="strike-wrap">${esc(task.text)}</span>${subsHtml}</div>${priceHtml}`;
       // Single tap toggles (or opens subtasks if it has them); double tap
       // always opens the nested subtask screen — see onTaskTap.
@@ -1141,11 +1158,14 @@ function renderSubtasks(container) {
   catEl.className = 'category subtask-view';
   catEl.dataset.catId = cat.id;
 
+  const priced = hasPrices(curSpace());
   const doneN = subs.filter(s => s.done).length;
   const name = trunc(task.text, 28);
+  let count = `${doneN}/${subs.length}`;
+  if (priced) { const sum = taskPrice(task); if (sum > 0) count += ` · ${fmtPrice(sum)}`; }
   const header = document.createElement('div');
   header.className = 'category-header';
-  header.innerHTML = `<span class="cat-line"></span><span class="category-name">${esc(name)}</span><span class="cat-line-mid"></span><span class="category-count">${doneN}/${subs.length}</span><span class="cat-line"></span>`;
+  header.innerHTML = `<span class="cat-line"></span><span class="category-name">${esc(name)}</span><span class="cat-line-mid"></span><span class="category-count">${esc(count)}</span><span class="cat-line"></span>`;
   // triple tap on the subtask header clears completed subtasks
   setupTripleTap(header, () => {
     if (subs.some(s => s.done)) { navigator.vibrate && navigator.vibrate(20); clearCompletedSubtasks(cat.id, task.id); }
@@ -1166,7 +1186,9 @@ function renderSubtasks(container) {
 
     el.className = cls;
     el.dataset.id = sub.id;
-    el.innerHTML = `<div class="task-bullet"></div><div class="task-text"><span class="strike-wrap">${esc(sub.text)}</span></div>`;
+    const subPriceHtml = (priced && sub.price != null && sub.price !== '')
+      ? `<span class="task-price">${esc(fmtPrice(Number(sub.price)))}</span>` : '';
+    el.innerHTML = `<div class="task-bullet"></div><div class="task-text"><span class="strike-wrap">${esc(sub.text)}</span></div>${subPriceHtml}`;
     el.addEventListener('click', () => { if (holdConsumed) { holdConsumed = false; return; } toggleSubtask(cat.id, task.id, sub.id); });
     setupHold(el, () => promptEditSubtask(cat.id, task.id, sub.id), () => openSubtaskSheet(cat.id, task.id, sub.id));
     tasksEl.appendChild(el);
@@ -1322,16 +1344,17 @@ function updateSubtaskCount() {
 }
 
 function promptAddSubtask(catId, taskId) {
-  openDialog('New subtask', '', val => {
+  openDialog('New subtask', state.draft || '', val => {
     const task = cats().find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
     if (!task) return;
     task.subtasks = task.subtasks || [];
     task.subtasks.push({ id: uid('s'), text: val, done: false });
     syncParentDone(task);
     stamp(task);
+    state.draft = '';
     logH('+', `Added subtask "${trunc(val)}" to "${trunc(task.text, 20)}"`);
     render();
-  }, true);
+  }, true, true);
 }
 
 function promptEditSubtask(catId, taskId, subId) {
@@ -1512,18 +1535,31 @@ function promptEditTask(catId, taskId) {
   }, true);
 }
 
+function parsePrice(val) {
+  const n = parseFloat(String(val).replace(',', '.').replace(/[^\d.]/g, ''));
+  return (!String(val).trim() || isNaN(n)) ? null : n;
+}
+// price on a leaf task (a task with no subtasks)
 function promptSetPrice(catId, taskId) {
   const task = cats().find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
   if (!task) return;
   openDialog(`Price in ${curSym()} — leave empty to clear`, task.price != null ? String(task.price) : '', val => {
-    const n = parseFloat(String(val).replace(',', '.').replace(/[^\d.]/g, ''));
-    if (!String(val).trim() || isNaN(n)) {
-      delete task.price;
-      logH('~', `Cleared price for "${trunc(task.text)}"`);
-    } else {
-      task.price = n;
-      logH('~', `Price ${fmtPrice(n)} for "${trunc(task.text)}"`);
-    }
+    const n = parsePrice(val);
+    if (n == null) { delete task.price; logH('~', `Cleared price for "${trunc(task.text)}"`); }
+    else { task.price = n; logH('~', `Price ${fmtPrice(n)} for "${trunc(task.text)}"`); }
+    stamp(task);
+    render();
+  }, false);
+}
+// price on a subtask (a leaf in the tree)
+function promptSetSubPrice(catId, taskId, subId) {
+  const task = cats().find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
+  const sub = task?.subtasks?.find(s => s.id === subId);
+  if (!sub) return;
+  openDialog(`Price in ${curSym()} — leave empty to clear`, sub.price != null ? String(sub.price) : '', val => {
+    const n = parsePrice(val);
+    if (n == null) { delete sub.price; logH('~', `Cleared price for "${trunc(sub.text)}"`); }
+    else { sub.price = n; logH('~', `Price ${fmtPrice(n)} for "${trunc(sub.text)}"`); }
     stamp(task);
     render();
   }, false);
@@ -1543,14 +1579,15 @@ function deleteTask(catId, taskId) {
 }
 
 function promptAddTask(catId) {
-  openDialog('New task', '', val => {
+  openDialog('New task', state.draft || '', val => {
     const cat = cats().find(c => c.id === catId);
     if (!cat) return;
     cat.tasks.push({ id: uid('t'), text: val, done: false, mt: nextMt() });
     stamp(cat);
+    state.draft = '';
     logH('+', `Added "${trunc(val)}" to "${trunc(cat.name, 18)}"`);
     render();
-  }, true);
+  }, true, true);
 }
 
 function clearSpace() {

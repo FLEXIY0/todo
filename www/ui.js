@@ -1,5 +1,5 @@
 // ── App meta ─────────────────────────────────────────────────
-const APP_VERSION = '2.3';
+const APP_VERSION = '2.4';
 const REPO_URL = 'https://github.com/FLEXIY0/todo';
 
 // ── Material icons (Google standard, inline SVG, themeable) ──
@@ -418,7 +418,9 @@ function openTaskSheet(catId, taskId) {
     { icon: '≡', label: 'Subtasks', action: () => openSubtasks(catId, taskId) },
     { icon: '✏️', label: 'Edit task',   action: () => promptEditTask(catId, taskId) },
   );
-  if (hasPrices(curSpace())) items.push(
+  // a task can have its own price only when it has no subtasks (a leaf);
+  // tasks with subtasks roll up the subtasks' prices instead
+  if (hasPrices(curSpace()) && !hasSubs) items.push(
     { icon: '🏷', label: (task.price != null && task.price !== '') ? `Price: ${fmtPrice(Number(task.price))}` : 'Set price', action: () => promptSetPrice(catId, taskId) }
   );
   items.push(
@@ -433,35 +435,68 @@ function openSubtaskSheet(catId, taskId, subId) {
   const sub  = task?.subtasks?.find(s => s.id === subId);
   if (!sub) return;
   const lbl = sub.text.length > 42 ? sub.text.slice(0, 42) + '…' : sub.text;
-  openSheet(lbl, [
+  const items = [
     { icon: sub.done ? '○' : '✓', label: sub.done ? 'Mark incomplete' : 'Mark complete', action: () => toggleSubtask(catId, taskId, subId) },
     { icon: '✏️', label: 'Edit subtask',   action: () => promptEditSubtask(catId, taskId, subId) },
+  ];
+  if (hasPrices(curSpace())) items.push(
+    { icon: '🏷', label: (sub.price != null && sub.price !== '') ? `Price: ${fmtPrice(Number(sub.price))}` : 'Set price', action: () => promptSetSubPrice(catId, taskId, subId) }
+  );
+  items.push(
     { icon: '⧉', label: 'Copy as text',   action: () => exportSubtask(catId, taskId, subId) },
     { icon: '🗑️', label: 'Delete subtask', danger: true, action: () => deleteSubtask(catId, taskId, subId) },
-  ]);
+  );
+  openSheet(lbl, items);
 }
 
 // ── Dialog ───────────────────────────────────────────────────
-let dialogCb = null, dialogIsTask = false;
+// The task/subtask field is a contenteditable div (not a <textarea>) —
+// Android WebViews tend to draw the red spellcheck underline on
+// contenteditable more reliably than on form fields.
+let dialogCb = null, dialogIsTask = false, dialogDraft = false;
 
-function openDialog(title, value, cb, isTask) {
-  dialogIsTask = !!isTask; dialogCb = cb;
+function dialogEl(isTask) { return document.getElementById(isTask ? 'dialogTextarea' : 'dialogInput'); }
+function getDialogValue(isTask) {
+  const el = dialogEl(isTask);
+  return isTask ? (el.innerText || '') : el.value;
+}
+function setDialogValue(isTask, val) {
+  const el = dialogEl(isTask);
+  if (isTask) { el.textContent = val || ''; el.classList.toggle('empty', !val); }
+  else el.value = val || '';
+}
+function placeCaretEnd(el) {
+  const r = document.createRange(); r.selectNodeContents(el); r.collapse(false);
+  const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+}
+
+function openDialog(title, value, cb, isTask, isDraft) {
+  dialogIsTask = !!isTask; dialogCb = cb; dialogDraft = !!isDraft;
   document.getElementById('dialogTitle').textContent = title;
   const inp = document.getElementById('dialogInput');
   const ta  = document.getElementById('dialogTextarea');
   const ht  = document.getElementById('dialogHint');
-  inp.style.display = isTask ? 'none'  : 'block'; inp.value = isTask ? '' : value;
-  ta.style.display  = isTask ? 'block' : 'none';  ta.value  = isTask ? value : '';
+  inp.style.display = isTask ? 'none'  : 'block';
+  ta.style.display  = isTask ? 'block' : 'none';
   ht.style.display  = isTask ? 'block' : 'none';
+  setDialogValue(isTask, value);
   document.getElementById('dialogOverlay').classList.add('active');
   armBack();
-  setTimeout(() => (isTask ? ta : inp).focus(), 130);
+  setTimeout(() => { const f = isTask ? ta : inp; f.focus(); if (isTask) placeCaretEnd(ta); }, 130);
 }
 function closeDialog() {
+  // dismissing a new-task/subtask dialog keeps the unfinished text as a draft
+  if (dialogDraft) {
+    const v = getDialogValue(true);
+    state.draft = v.trim() ? v : '';
+    dialogDraft = false;
+    saveState();
+  }
   document.getElementById('dialogOverlay').classList.remove('active'); dialogCb = null;
 }
 function confirmDialog() {
-  const val = (dialogIsTask ? document.getElementById('dialogTextarea') : document.getElementById('dialogInput')).value.trim();
+  const val = getDialogValue(dialogIsTask).trim();
+  dialogDraft = false; // saved (or empty) — don't persist as a draft
   if (dialogCb && val) dialogCb(val);
   closeDialog();
 }
@@ -470,9 +505,17 @@ document.getElementById('dialogInput').addEventListener('keydown', e => {
   if (e.key === 'Enter')  confirmDialog();
   if (e.key === 'Escape') closeDialog();
 });
-document.getElementById('dialogTextarea').addEventListener('keydown', e => {
+const dialogTa = document.getElementById('dialogTextarea');
+dialogTa.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') confirmDialog();
   if (e.key === 'Escape') closeDialog();
+});
+dialogTa.addEventListener('input', () => dialogTa.classList.toggle('empty', !dialogTa.innerText.trim()));
+// keep pasted text plain (contenteditable would otherwise paste rich HTML)
+dialogTa.addEventListener('paste', e => {
+  e.preventDefault();
+  const t = (e.clipboardData || window.clipboardData).getData('text/plain');
+  document.execCommand('insertText', false, t);
 });
 document.getElementById('dialogOverlay').addEventListener('click', e => {
   if (e.target === document.getElementById('dialogOverlay')) closeDialog();

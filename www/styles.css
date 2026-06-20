@@ -1047,6 +1047,20 @@ body.theme-anthropic-dark .flip-content {
   word-break: break-word;
 }
 
+.tw-price {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding-left: 8px;
+  color: var(--accent);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.sub-twig.done .tw-price {
+  color: var(--accent-dim);
+  opacity: .7;
+}
+
 .sub-twig.done .tw-txt {
   text-decoration: line-through;
   color: var(--text-dim);
@@ -1593,7 +1607,7 @@ body.theme-anthropic-dark .flip-content {
 }
 
 .dialog input,
-.dialog textarea {
+.dialog .dialog-edit {
   width: 100%;
   background: var(--accent-xs);
   border: 1px solid var(--border-dim);
@@ -1608,20 +1622,31 @@ body.theme-anthropic-dark .flip-content {
   font-family: Arial, sans-serif;
 }
 
-.dialog input::placeholder,
-.dialog textarea::placeholder {
+.dialog input::placeholder {
   color: var(--text-dim);
 }
 
 .dialog input:focus,
-.dialog textarea:focus {
+.dialog .dialog-edit:focus {
   border-color: var(--border);
 }
 
-.dialog textarea {
-  resize: none;
+/* contenteditable task field: behaves like a multiline textarea */
+.dialog .dialog-edit {
   line-height: 1.55;
   min-height: 110px;
+  max-height: 40vh;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  text-align: left;
+  cursor: text;
+}
+
+.dialog .dialog-edit.empty:before {
+  content: attr(data-placeholder);
+  color: var(--text-dim);
+  pointer-events: none;
 }
 
 .dialog-hint {

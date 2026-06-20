@@ -56,7 +56,7 @@
     <div class="dialog">
       <div class="dialog-title" id="dialogTitle">Rename</div>
       <input type="text" id="dialogInput" placeholder="Category name…" spellcheck="true" autocapitalize="sentences" autocomplete="off" autocorrect="on" />
-      <textarea id="dialogTextarea" placeholder="Describe your task…" spellcheck="true" autocapitalize="sentences" autocomplete="off" autocorrect="on" style="display:none"></textarea>
+      <div id="dialogTextarea" class="dialog-edit empty" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="true" autocapitalize="sentences" autocorrect="on" data-placeholder="Describe your task…" style="display:none"></div>
       <div class="dialog-hint" id="dialogHint" style="display:none">Ctrl + Enter to save</div>
       <div class="dialog-buttons">
         <button class="d-btn cancel" onclick="closeDialog()">Cancel</button>
