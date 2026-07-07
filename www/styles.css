@@ -1,3 +1,56 @@
+/* ── Fonts ──────────────────────────────────────────────────── */
+/* Bundled mono with full Cyrillic coverage: system "monospace" on Android
+   only carries Latin, so Russian text silently fell back to a different
+   font. One face for both scripts keeps them visually identical. */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('vendor/fonts/jetbrains-mono-latin-400-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('vendor/fonts/jetbrains-mono-latin-700-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('vendor/fonts/jetbrains-mono-cyrillic-400-normal.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('vendor/fonts/jetbrains-mono-cyrillic-700-normal.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('vendor/fonts/jetbrains-mono-cyrillic-ext-400-normal.woff2') format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('vendor/fonts/jetbrains-mono-cyrillic-ext-700-normal.woff2') format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+
 /* ── Variables ─────────────────────────────────────────────── */
 :root {
   --bg: #110c06;
@@ -1415,42 +1468,86 @@ body.theme-anthropic-dark .flip-content {
   margin-bottom: 18px;
 }
 
-.tg-stage {
+/* step change: demo/title/text slide in */
+.tour-demo.swap, .tour-title.swap, .tour-text.swap { animation: tgIn .32s ease both; }
+@keyframes tgIn { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+
+/* ── demo scene building blocks ── */
+/* mini category card with fake task rows */
+.tg-frame {
   position: absolute;
-  inset: 0;
+  left: 22px;
+  right: 22px;
+  top: 18px;
+  padding: 5px 6px;
+  border: 1px solid var(--border-dim);
+  border-radius: 10px;
+  background: var(--bg);
 }
-
-/* mock task card the gesture acts on */
-.tg-card {
+.tg-frame.empty {
+  top: 26px;
+  bottom: 26px;
+  border-style: dashed;
+  background: transparent;
+  opacity: .6;
+}
+.tg-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  position: relative;
+}
+.tg-dot {
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid var(--accent-dim);
+  border-radius: 50%;
+  flex-shrink: 0;
+  position: relative;
+}
+.tg-dot::after {
+  content: '';
   position: absolute;
-  left: 28px;
-  right: 28px;
-  top: 58px;
-  height: 26px;
-  border-radius: 6px;
-  background: linear-gradient(90deg, var(--accent-dim), transparent 60%);
-  opacity: .5;
+  inset: 1.5px;
+  border-radius: 50%;
+  background: var(--accent);
+  transform: scale(0);
 }
-
-.tg-card.sub {
-  top: 96px;
-  opacity: .28;
+.tg-bar {
+  height: 7px;
+  border-radius: 4px;
+  background: var(--text-dim);
+  opacity: .55;
+  position: relative;
 }
-
+.tg-bar::after { /* strike line */
+  content: '';
+  position: absolute;
+  left: -2px;
+  top: 50%;
+  margin-top: -1px;
+  height: 2px;
+  width: 0;
+  border-radius: 1px;
+  background: var(--accent);
+}
 /* the moving finger */
 .tg-finger {
   position: absolute;
   width: 34px;
   height: 34px;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 35%, rgba(255, 255, 255, .35), var(--accent) 70%);
+  background: radial-gradient(circle at 35% 35%, rgba(255, 255, 255, .38), var(--accent) 72%);
   box-shadow: 0 4px 12px rgba(0, 0, 0, .4);
   left: 50%;
-  top: 64px;
+  top: 60px;
   margin: -17px 0 0 -17px;
+  z-index: 3;
 }
-
-.tg-finger::after {
+.tg-finger::after { /* tap ripple / hold ring */
   content: '';
   position: absolute;
   inset: -8px;
@@ -1458,47 +1555,285 @@ body.theme-anthropic-dark .flip-content {
   border: 2px solid var(--accent);
   opacity: 0;
 }
-
-.tg-arrow {
+/* mini bottom-sheet / drawer menu bars */
+.tg-menu {
   position: absolute;
-  top: 70px;
-  left: 40px;
-  right: 40px;
-  height: 2px;
-  background: var(--accent-dim);
+  left: 30px;
+  right: 30px;
+  bottom: 12px;
+  padding: 9px 12px;
+  border-radius: 10px 10px 4px 4px;
+  background: var(--bg2);
+  border: 1px solid var(--border-dim);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  transform: translateY(140%);
   opacity: 0;
 }
+.tg-mi {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--text-dim);
+  opacity: .5;
+}
+/* nested subtask rows revealed on double-tap */
+.tg-subs {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+}
+.tg-sub {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 8px 4px 26px;
+}
+.tg-br {
+  color: var(--accent-dim);
+  font-size: 11px;
+  line-height: 1;
+}
+/* two stacked pages for the swipe scene */
+.tg-page {
+  position: absolute;
+  inset: 0;
+}
+.tg-page .tg-frame { box-shadow: none; }
+.tg-page.b .tg-frame { border-color: var(--accent-dim); }
+/* mini drawer for the right-swipe scene */
+.tg-drawer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 42%;
+  background: var(--bg2);
+  border-right: 1px solid var(--border-dim);
+  padding: 18px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transform: translateX(-102%);
+  z-index: 2;
+}
+/* search pill for the pull scene */
+.tg-search {
+  position: absolute;
+  left: 34px;
+  right: 34px;
+  top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border: 1px solid var(--accent-dim);
+  border-radius: 999px;
+  background: var(--bg2);
+  transform: translateY(-46px);
+  opacity: 0;
+}
+.tg-search .mi {
+  width: 13px;
+  height: 13px;
+  fill: var(--accent);
+  flex-shrink: 0;
+}
+/* "+ Category" chip for the long-press scene */
+.tg-chip {
+  position: absolute;
+  left: 50%;
+  top: 52px;
+  transform: translateX(-50%) scale(.5);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--bg2);
+  color: var(--accent);
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-weight: 700;
+  opacity: 0;
+  z-index: 2;
+}
+.tg-chip .mi {
+  width: 12px;
+  height: 12px;
+  fill: currentColor;
+}
 
-/* tap */
-.tg-tap .tg-finger { animation: tgTap 1.7s ease-in-out infinite; }
-.tg-tap .tg-finger::after { animation: tgRipple 1.7s ease-out infinite; }
-@keyframes tgTap { 0%,100%{transform:translateY(-6px) scale(1)} 22%{transform:translateY(0) scale(.82)} 40%{transform:translateY(-6px) scale(1)} }
-@keyframes tgRipple { 0%,18%{opacity:0;transform:scale(.6)} 24%{opacity:.7} 55%{opacity:0;transform:scale(1.7)} 100%{opacity:0} }
+/* ── tap: check off, then bring back ── */
+.tg-tap .tg-finger { top: 63px; animation: tgTapF 2.8s ease-in-out infinite; }
+.tg-tap .tg-finger::after { animation: tgTapRipple 2.8s ease-out infinite; }
+.tg-tap .tgt .tg-dot::after { animation: tgTapDot 2.8s ease infinite; }
+.tg-tap .tgt .tg-bar::after { animation: tgTapStrike 2.8s ease infinite; }
+.tg-tap .tgt .tg-bar { animation: tgTapBar 2.8s ease infinite; }
+@keyframes tgTapF {
+  0% { transform: translate(30px, -12px) scale(1); opacity: 0; }
+  10%, 16% { transform: translate(0, 0) scale(1); opacity: 1; }
+  20% { transform: translate(0, 0) scale(.78); }
+  24%, 50% { transform: translate(0, 0) scale(1); opacity: 1; }
+  54% { transform: translate(0, 0) scale(.78); }
+  58%, 76% { transform: translate(0, 0) scale(1); opacity: 1; }
+  90%, 100% { transform: translate(30px, -12px) scale(1); opacity: 0; }
+}
+@keyframes tgTapRipple {
+  0%, 20% { opacity: 0; transform: scale(.6); }
+  26% { opacity: .7; }
+  42%, 52% { opacity: 0; transform: scale(1.6); }
+  54% { opacity: 0; transform: scale(.6); }
+  60% { opacity: .7; }
+  76%, 100% { opacity: 0; transform: scale(1.6); }
+}
+@keyframes tgTapDot { 0%, 21% { transform: scale(0); } 26%, 55% { transform: scale(1); } 60%, 100% { transform: scale(0); } }
+@keyframes tgTapStrike { 0%, 22% { width: 0; } 36%, 55% { width: 103%; } 62%, 100% { width: 0; } }
+@keyframes tgTapBar { 0%, 22% { opacity: .55; } 30%, 55% { opacity: .22; } 62%, 100% { opacity: .55; } }
 
-/* double tap */
-.tg-double .tg-finger { animation: tgDouble 1.8s ease-in-out infinite; }
-@keyframes tgDouble { 0%,100%{transform:scale(1)} 12%,30%{transform:scale(.82)} 21%{transform:scale(1)} }
+/* ── hold: row lifts, menu pops ── */
+.tg-hold .tg-finger { top: 44px; animation: tgHoldF 3s ease-in-out infinite; }
+.tg-hold .tg-finger::after { animation: tgHoldRing 3s ease-out infinite; }
+.tg-hold .tgt { animation: tgHoldRow 3s ease infinite; }
+.tg-hold .tg-menu { animation: tgHoldMenu 3s cubic-bezier(.22, 1, .36, 1) infinite; }
+@keyframes tgHoldF {
+  0% { transform: translate(-26px, 14px) scale(1); opacity: 0; }
+  10%, 14% { transform: translate(0, 0) scale(1); opacity: 1; }
+  18%, 66% { transform: translate(0, 0) scale(.78); opacity: 1; }
+  70%, 80% { transform: translate(0, 0) scale(1); opacity: 1; }
+  92%, 100% { transform: translate(-26px, 14px) scale(1); opacity: 0; }
+}
+@keyframes tgHoldRing {
+  0%, 17% { opacity: 0; transform: scale(.7); }
+  22% { opacity: .8; transform: scale(.85); }
+  48% { opacity: .25; transform: scale(1.45); }
+  56%, 100% { opacity: 0; transform: scale(1.6); }
+}
+@keyframes tgHoldRow {
+  0%, 16% { transform: none; border-color: transparent; background: transparent; }
+  22%, 72% { transform: translateY(-2px) scale(1.02); border-color: var(--accent-dim); background: var(--accent-xs); box-shadow: 0 6px 14px rgba(0, 0, 0, .35); }
+  80%, 100% { transform: none; border-color: transparent; background: transparent; }
+}
+@keyframes tgHoldMenu {
+  0%, 50% { transform: translateY(140%); opacity: 0; }
+  60%, 86% { transform: translateY(0); opacity: 1; }
+  94%, 100% { transform: translateY(140%); opacity: 0; }
+}
 
-/* hold */
-.tg-hold .tg-finger { animation: tgHold 2.2s ease-in-out infinite; }
-.tg-hold .tg-finger::after { animation: tgHoldRing 2.2s ease-out infinite; }
-@keyframes tgHold { 0%,100%{transform:scale(1)} 18%,72%{transform:scale(.82)} }
-@keyframes tgHoldRing { 0%,18%{opacity:0;transform:scale(.7)} 22%{opacity:.8;transform:scale(.9)} 72%{opacity:.2;transform:scale(1.5)} 80%,100%{opacity:0} }
+/* ── double-tap: subtasks unfold ── */
+.tg-double .tg-finger { top: 44px; animation: tgDblF 2.6s ease-in-out infinite; }
+.tg-double .tg-finger::after { animation: tgDblRipple 2.6s ease-out infinite; }
+.tg-double .tg-subs { animation: tgDblSubs 2.6s ease infinite; }
+@keyframes tgDblF {
+  0% { transform: translate(28px, -12px) scale(1); opacity: 0; }
+  10%, 13% { transform: translate(0, 0) scale(1); opacity: 1; }
+  16% { transform: translate(0, 0) scale(.78); }
+  19% { transform: translate(0, 0) scale(1); }
+  22% { transform: translate(0, 0) scale(.78); }
+  26%, 62% { transform: translate(0, 0) scale(1); opacity: 1; }
+  78%, 100% { transform: translate(28px, -12px) scale(1); opacity: 0; }
+}
+@keyframes tgDblRipple {
+  0%, 15% { opacity: 0; transform: scale(.6); }
+  18% { opacity: .6; }
+  21% { opacity: 0; transform: scale(1.3); }
+  22% { opacity: .6; transform: scale(.7); }
+  34%, 100% { opacity: 0; transform: scale(1.5); }
+}
+@keyframes tgDblSubs {
+  0%, 24% { max-height: 0; opacity: 0; }
+  38%, 78% { max-height: 52px; opacity: 1; }
+  92%, 100% { max-height: 0; opacity: 0; }
+}
 
-/* swipe sideways */
-.tg-swipe .tg-finger { animation: tgSwipe 2s ease-in-out infinite; }
-@keyframes tgSwipe { 0%,100%{transform:translateX(80px)} 50%{transform:translateX(-80px)} }
+/* ── swipe: page flips to the next space ── */
+.tg-swipe .tg-finger { top: 84px; animation: tgSwipeF 3s ease-in-out infinite; }
+.tg-swipe .tg-page.a { animation: tgSwipeA 3s cubic-bezier(.4, 0, .2, 1) infinite; }
+.tg-swipe .tg-page.b .tg-frame { animation: tgSwipeB 3s ease infinite; }
+@keyframes tgSwipeF {
+  0%, 8% { transform: translate(52px, 0) scale(1); opacity: 0; }
+  14% { transform: translate(52px, 0) scale(1); opacity: 1; }
+  17% { transform: translate(52px, 0) scale(.82); }
+  46% { transform: translate(-58px, 0) scale(.82); opacity: 1; }
+  52%, 60% { transform: translate(-58px, 0) scale(1); opacity: 0; }
+  100% { transform: translate(-58px, 0) scale(1); opacity: 0; }
+}
+@keyframes tgSwipeA {
+  0%, 15% { transform: translateX(0); }
+  48%, 64% { transform: translateX(-112%); }
+  70% { transform: translateX(-112%); }
+  94%, 100% { transform: translateX(0); }
+}
+@keyframes tgSwipeB {
+  0%, 15% { transform: scale(.96); opacity: .7; }
+  48%, 70% { transform: scale(1); opacity: 1; }
+  94%, 100% { transform: scale(.96); opacity: .7; }
+}
 
-/* swipe right (menu) */
-.tg-right .tg-finger { animation: tgRight 1.9s ease-in-out infinite; left: 30px; }
-.tg-right .tg-arrow { animation: tgArrow 1.9s ease-in-out infinite; }
-@keyframes tgRight { 0%,12%{transform:translateX(0);opacity:1} 60%{transform:translateX(150px);opacity:1} 78%,100%{transform:translateX(150px);opacity:0} }
-@keyframes tgArrow { 0%,12%{opacity:0;clip-path:inset(0 100% 0 0)} 60%{opacity:.6;clip-path:inset(0 0 0 0)} 80%,100%{opacity:0} }
+/* ── swipe right: drawer slides in ── */
+.tg-right .tg-finger { left: 24px; top: 84px; animation: tgRightF 3s ease-in-out infinite; }
+.tg-right .tg-drawer { animation: tgRightDrawer 3s cubic-bezier(.22, 1, .36, 1) infinite; }
+.tg-right .tg-page.a { animation: tgRightPage 3s ease infinite; }
+@keyframes tgRightF {
+  0%, 8% { transform: translate(0, 0) scale(1); opacity: 0; }
+  13% { transform: translate(0, 0) scale(1); opacity: 1; }
+  16% { transform: translate(0, 0) scale(.82); }
+  44% { transform: translate(96px, 0) scale(.82); opacity: 1; }
+  50%, 58% { transform: translate(96px, 0) scale(1); opacity: 0; }
+  100% { transform: translate(96px, 0) scale(1); opacity: 0; }
+}
+@keyframes tgRightDrawer {
+  0%, 14% { transform: translateX(-102%); }
+  46%, 74% { transform: translateX(0); }
+  96%, 100% { transform: translateX(-102%); }
+}
+@keyframes tgRightPage {
+  0%, 14% { opacity: 1; transform: translateX(0); }
+  46%, 74% { opacity: .35; transform: translateX(12px); }
+  96%, 100% { opacity: 1; transform: translateX(0); }
+}
 
-/* press empty (add) */
-.tg-press .tg-card, .tg-press .tg-card.sub { opacity: .12; }
-.tg-press .tg-finger { top: 110px; animation: tgHold 2.2s ease-in-out infinite; }
-.tg-press .tg-finger::after { animation: tgHoldRing 2.2s ease-out infinite; }
+/* ── pull down: search drops in ── */
+.tg-pull .tg-finger { top: 46px; animation: tgPullF 3s ease-in-out infinite; }
+.tg-pull .tg-frame { animation: tgPullList 3s ease infinite; }
+.tg-pull .tg-search { animation: tgPullSearch 3s cubic-bezier(.22, 1, .36, 1) infinite; }
+@keyframes tgPullF {
+  0%, 8% { transform: translate(0, -20px) scale(1); opacity: 0; }
+  14% { transform: translate(0, 0) scale(1); opacity: 1; }
+  17% { transform: translate(0, 0) scale(.82); }
+  42% { transform: translate(0, 42px) scale(.82); opacity: 1; }
+  48%, 56% { transform: translate(0, 42px) scale(1); opacity: 0; }
+  100% { transform: translate(0, 42px) scale(1); opacity: 0; }
+}
+@keyframes tgPullList {
+  0%, 14% { transform: translateY(0); }
+  44%, 72% { transform: translateY(30px); }
+  94%, 100% { transform: translateY(0); }
+}
+@keyframes tgPullSearch {
+  0%, 26% { transform: translateY(-46px); opacity: 0; }
+  48%, 78% { transform: translateY(0); opacity: 1; }
+  96%, 100% { transform: translateY(-46px); opacity: 0; }
+}
+
+/* ── long-press empty: category chip pops ── */
+.tg-press .tg-finger { top: 88px; animation: tgPressF 3s ease-in-out infinite; }
+.tg-press .tg-finger::after { animation: tgHoldRing 3s ease-out infinite; }
+.tg-press .tg-chip { animation: tgPressChip 3s cubic-bezier(.34, 1.56, .64, 1) infinite; }
+@keyframes tgPressF {
+  0%, 8% { transform: translate(0, 24px) scale(1); opacity: 0; }
+  14% { transform: translate(0, 0) scale(1); opacity: 1; }
+  18%, 58% { transform: translate(0, 0) scale(.78); opacity: 1; }
+  64%, 74% { transform: translate(0, 0) scale(1); opacity: 1; }
+  88%, 100% { transform: translate(0, 24px) scale(1); opacity: 0; }
+}
+@keyframes tgPressChip {
+  0%, 54% { transform: translateX(-50%) scale(.5); opacity: 0; }
+  64%, 88% { transform: translateX(-50%) scale(1); opacity: 1; }
+  96%, 100% { transform: translateX(-50%) scale(.5); opacity: 0; }
+}
 
 .tour-title {
   font-size: 17px;
@@ -1791,6 +2126,112 @@ body.theme-anthropic-dark .flip-content {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ── Reminder editor ──────────────────────────────────────────── */
+.rem-time {
+  width: 100%;
+  background: var(--accent-xs);
+  border: 1px solid var(--border-dim);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: var(--app-font);
+  font-size: calc(22px * var(--font-scale));
+  text-align: center;
+  padding: 10px;
+  margin-bottom: 14px;
+  outline: none;
+  color-scheme: dark;
+}
+body.theme-anthropic .rem-time { color-scheme: light; }
+.rem-days {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+.rem-day {
+  flex: 1;
+  max-width: 40px;
+  padding: 8px 0;
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: .5px;
+  border: 1px solid var(--border-dim);
+  border-radius: 8px;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all .15s;
+  user-select: none;
+}
+.rem-day.on {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 700;
+}
+.rem-repeat {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text);
+  opacity: .85;
+  padding: 6px 0 16px;
+  cursor: pointer;
+  user-select: none;
+}
+.rem-check {
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--border);
+  border-radius: 5px;
+  position: relative;
+  flex-shrink: 0;
+  transition: background .15s;
+}
+.rem-check.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.rem-check.on::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 1px;
+  width: 5px;
+  height: 10px;
+  border: solid var(--bg);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.rem-remove {
+  width: 100%;
+  margin-top: 10px;
+  background: none;
+  border: none;
+  color: var(--danger);
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+  padding: 8px;
+}
+
+/* reminder bell on a task row */
+.task-bell {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--accent-dim);
+  margin-left: 6px;
+}
+.task-bell .mi {
+  width: 13px;
+  height: 13px;
+  fill: currentColor;
+}
+.task-item.done .task-bell { opacity: .4; }
 
 /* highlight an item jumped to from search */
 .flash {

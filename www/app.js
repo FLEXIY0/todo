@@ -12,6 +12,7 @@ function saveState() {
     draft: state.draft,
   }));
   if (typeof maybeSync === 'function') maybeSync();
+  if (typeof syncReminders === 'function') syncReminders(); // debounced no-op unless reminders changed
 }
 
 let firstRun = false;
@@ -41,6 +42,7 @@ function loadState() {
     if (saved.settings) Object.assign(state.settings, saved.settings);
     if (Array.isArray(saved.history)) state.history = saved.history;
     if (saved.sync) Object.assign(state.sync, saved.sync);
+    if (!state.sync.devices) state.sync.devices = {};
     if (typeof saved.draft === 'string') state.draft = saved.draft;
     if (saved.theme) state.theme = saved.theme;
   } catch (e) { }
@@ -77,7 +79,7 @@ const state = {
   ],
   settings: { wishlistOn: true, sharedOn: true, historyLimit: 200, fontSize: 'm', fontFamily: 'system', currency: '₽' },
   history: [],
-  sync: { room: null, tombs: {} },
+  sync: { room: null, tombs: {}, devices: {} },
   draft: '',
 };
 
@@ -424,7 +426,8 @@ function renderSpace(container, space) {
       const pillVal = subs.length ? taskPrice(task) : (Number(task.price) || 0);
       const priceHtml = (priced && pillVal > 0)
         ? `<span class="task-price">${esc(fmtPrice(pillVal))}</span>` : '';
-      el.innerHTML = `<div class="task-bullet"></div><div class="task-text"><span class="strike-wrap">${esc(task.text)}</span>${subsHtml}</div>${priceHtml}`;
+      const bellHtml = task.rem ? `<span class="task-bell">${iconSvg('alarm')}</span>` : '';
+      el.innerHTML = `<div class="task-bullet"></div><div class="task-text"><span class="strike-wrap">${esc(task.text)}</span>${subsHtml}</div>${bellHtml}${priceHtml}`;
       // Single tap toggles (or opens subtasks if it has them); double tap
       // always opens the nested subtask screen — see onTaskTap.
       el.addEventListener('click', () => onTaskTap(cat.id, task.id));
@@ -724,9 +727,9 @@ function renderConn(container) {
   frame.appendChild(list);
   container.appendChild(frame);
 
-  // ── Devices in the room ──
+  // ── Devices in the room: everyone we've ever heard, online first ──
   if (state.sync.room) {
-    const devs = (typeof onlineDevices === 'function') ? onlineDevices() : [];
+    const devs = (typeof knownDevices === 'function') ? knownDevices() : [];
     const dframe = document.createElement('div');
     dframe.className = 'category';
     dframe.innerHTML = `<div class="category-header"><span class="cat-line"></span><span class="category-name">Devices</span><span class="cat-line-mid"></span><span class="category-count">${devs.length + 1}</span><span class="cat-line"></span></div>`;
@@ -734,13 +737,15 @@ function renderConn(container) {
     dlist.className = 'tasks';
     const me = (typeof DEV_ID !== 'undefined') ? DEV_ID : '';
     dlist.appendChild(connRow('up', 'This device', esc(me.slice(0, 6)) + ' · you', true));
-    devs.sort((a, b) => b.ts - a.ts).forEach(d => {
-      dlist.appendChild(connRow('up', d.id.slice(0, 6), fmtAgo(d.ts) + ' · ' + d.via, false));
+    devs.forEach(d => {
+      dlist.appendChild(d.online
+        ? connRow('up', d.id.slice(0, 6), fmtAgo(d.ts) + ' · ' + d.via, false)
+        : connRow('off', d.id.slice(0, 6), 'offline · seen ' + fmtAgo(d.ts), false));
     });
     if (!devs.length) {
       const hint = document.createElement('div');
       hint.className = 'empty-hint';
-      hint.textContent = 'No other devices online';
+      hint.textContent = 'No other devices heard yet';
       dlist.appendChild(hint);
     }
     dframe.appendChild(dlist);
@@ -752,7 +757,9 @@ function fmtAgo(ts) {
   const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
   if (s < 5) return 'now';
   if (s < 60) return s + 's ago';
-  return Math.round(s / 60) + 'm ago';
+  if (s < 3600) return Math.round(s / 60) + 'm ago';
+  if (s < 86400) return Math.round(s / 3600) + 'h ago';
+  return Math.round(s / 86400) + 'd ago';
 }
 
 function brokerHostLabel(url) {
@@ -763,7 +770,7 @@ function brokerHostLabel(url) {
 function connRow(stateName, name, sub, active) {
   const row = document.createElement('div');
   row.className = 'conn-row';
-  const cls = stateName === 'up' ? 'on' : stateName === 'wait' ? 'wait' : 'err';
+  const cls = stateName === 'up' ? 'on' : stateName === 'wait' ? 'wait' : stateName === 'off' ? '' : 'err';
   row.innerHTML = `<span class="sync-dot ${cls}"></span>` +
     `<span class="conn-name">${esc(name)}${active ? ' <span class="conn-active">●</span>' : ''}</span>` +
     `<span class="conn-sub">${esc(sub)}</span>`;
@@ -872,6 +879,151 @@ function flashItem(id, isCat) {
   el.classList.add('flash');
   setTimeout(() => el.classList.remove('flash'), 1500);
 }
+
+// ── Reminders ────────────────────────────────────────────────
+// A task can carry rem = { time:'HH:MM', days:[1..7 ISO Mon=1], rep:bool }.
+// On Android they become real scheduled notifications via the Capacitor
+// LocalNotifications plugin (exact, weekly-repeating, survive reboot);
+// on plain web an in-app timer shows a toast while the app is open.
+function LN() {
+  return (window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.LocalNotifications) || null;
+}
+
+// stable per-task notification id base (plugin ids are Java ints)
+function remIdBase(id) {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  return (Math.abs(h) % 250000000) * 8;
+}
+
+// next occurrence (ms) of rem's time on one of its days, strictly after `from`
+function nextRemAt(rem, from) {
+  const t = (rem.time || '').split(':').map(Number);
+  if (t.length !== 2 || isNaN(t[0]) || isNaN(t[1]) || !(rem.days || []).length) return 0;
+  const after = from || Date.now();
+  const base = new Date(after);
+  for (let d = 0; d < 8; d++) {
+    const cand = new Date(base.getFullYear(), base.getMonth(), base.getDate() + d, t[0], t[1], 0, 0);
+    const iso = ((cand.getDay() + 6) % 7) + 1; // JS Sun=0 → ISO Mon=1..Sun=7
+    if (rem.days.includes(iso) && cand.getTime() > after) return cand.getTime();
+  }
+  return 0;
+}
+
+// every reminder-carrying task in every space (shared: both boards)
+function allRemTasks() {
+  const out = [];
+  state.spaces.forEach(sp => {
+    const lists = sp.shared ? [spCats(sp, 'todo'), spCats(sp, 'wish')] : [sp.categories || []];
+    lists.forEach(list => list.forEach(c => c.tasks.forEach(t => { if (t.rem) out.push({ sp, cat: c, task: t }); })));
+  });
+  return out;
+}
+
+const DAY_SHORT = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
+function fmtRem(rem) {
+  const days = (rem.days || []).length === 7 ? 'daily'
+    : (rem.days || []).map(d => DAY_SHORT[d - 1]).join(' ');
+  return rem.time + ' · ' + days + (rem.rep ? ' · weekly' : ' · once');
+}
+
+// Debounced, idempotent re-sync of scheduled notifications from state.
+// Cheap to call often (hooked into saveState): fingerprint short-circuits.
+let remTimer = null, remFinger = null;
+function syncReminders() {
+  clearTimeout(remTimer);
+  remTimer = setTimeout(doSyncReminders, 1200);
+}
+async function doSyncReminders() {
+  // one-shot reminders that already fired: clear the bell
+  let expired = false;
+  allRemTasks().forEach(({ task }) => {
+    if (task.rem && !task.rem.rep && task.rem.next && task.rem.next < Date.now()) {
+      delete task.rem;
+      expired = true;
+    }
+  });
+  if (expired) { saveState(); render(); }
+
+  const live = allRemTasks().filter(({ task }) => nextRemAt(task.rem) > 0);
+  const finger = JSON.stringify(live.map(({ task }) =>
+    [task.id, task.text, task.rem.time, task.rem.days, !!task.rem.rep]));
+  if (finger === remFinger) return;
+  const ln = LN();
+  if (!ln) { remFinger = finger; return; }
+  try {
+    const pend = await ln.getPending();
+    if (pend.notifications && pend.notifications.length)
+      await ln.cancel({ notifications: pend.notifications.map(n => ({ id: n.id })) });
+    const notifs = [];
+    live.forEach(({ cat, task }) => {
+      const rem = task.rem, base = remIdBase(task.id);
+      const t = rem.time.split(':').map(Number);
+      if (rem.rep) {
+        rem.days.forEach(d => notifs.push({
+          id: base + d,
+          title: task.text,
+          body: cat.name,
+          extra: { taskId: task.id },
+          schedule: { on: { weekday: d % 7 + 1, hour: t[0], minute: t[1] }, allowWhileIdle: true },
+        }));
+      } else {
+        const at = nextRemAt(rem);
+        rem.next = at;
+        notifs.push({
+          id: base,
+          title: task.text,
+          body: cat.name,
+          extra: { taskId: task.id },
+          schedule: { at: new Date(at), allowWhileIdle: true },
+        });
+      }
+    });
+    if (notifs.length) {
+      const perm = await ln.requestPermissions();
+      if (!perm || perm.display !== 'granted') { toast('Allow notifications in system settings'); return; }
+      await ln.schedule({ notifications: notifs });
+    }
+    remFinger = finger;
+  } catch (e) { /* plugin hiccup — next state change retries */ }
+}
+
+// tapping a notification jumps to (and flashes) its task
+(function initRemTap() {
+  const ln = LN();
+  if (!ln || !ln.addListener) return;
+  ln.addListener('localNotificationActionPerformed', ev => {
+    const id = ev && ev.notification && ev.notification.extra && ev.notification.extra.taskId;
+    if (!id) return;
+    const hit = allRemTasks().find(({ task }) => task.id === id);
+    if (!hit) return;
+    const idx = visSpaces().indexOf(hit.sp);
+    if (idx >= 0) spaceIndex = idx;
+    subtaskView = null; historyView = settingsView = themesView = connView = searchView = false;
+    render();
+    setTimeout(() => flashItem(id), 120);
+  });
+})();
+
+// web fallback: no plugin → in-app toast while the app is open
+setInterval(() => {
+  if (LN()) return;
+  let hit = false;
+  allRemTasks().forEach(({ task }) => {
+    const rem = task.rem;
+    const next = nextRemAt(rem);
+    if (!next) return;
+    if (!rem.next || rem.next <= Date.now() - 120000) { rem.next = next; return; }
+    if (rem.next <= Date.now()) {
+      toast('⏰ ' + trunc(task.text, 40));
+      navigator.vibrate && navigator.vibrate([120, 60, 120]);
+      if (rem.rep) rem.next = nextRemAt(rem, rem.next + 1000);
+      else delete task.rem;
+      hit = true;
+    }
+  });
+  if (hit) { saveState(); render(); }
+}, 20000);
 
 // Per-space options: rename, subtask style, tab label, enable, delete
 function openSpaceSheet(spId) {
@@ -1776,9 +1928,12 @@ function parseChecklist(text) {
       return;
     }
     const isSub = /^(\s{2,}|\t)/.test(raw);
-    // bullets (- * +), numbered (1. 1) 2)), lettered (a. a)) or a bare line
-    const tm = line.trim().match(/^(?:[-*+]|\d{1,3}[.)]|[a-zA-Z][.)])\s*(?:\[([ xX])\])?\s*(.*)$/);
-    const done = !!tm && (tm[1] || '').toLowerCase() === 'x';
+    // bullets (- * + • ‣ ▪ ● ○), numbered (1. 1) 2)), lettered (a. a)) or a
+    // bare line. ASCII/numbered markers must be followed by a space or a
+    // checkbox so "1.5 кг" or "-20°" survive as plain text; checkboxes
+    // tolerate "[]", "[ x ]" and unicode checks.
+    const tm = line.trim().match(/^(?:[•‣▪●○]|(?:[-*+]|\d{1,3}[.)]|[a-zA-Z][.)])(?=\s|\[))?\s*(?:\[\s*([xX✓✔])?\s*\])?\s*(.*)$/);
+    const done = !!tm && !!tm[1];
     const txt = (tm ? tm[2] : line.trim()).trim();
     if (!txt) return;
     if (isSub && lastTask) {
@@ -1840,3 +1995,4 @@ render();
 if (!state.settings.onboarded) {
   setTimeout(() => { if (typeof openTour === 'function') openTour(); }, 350);
 }
+syncReminders(); // re-arm scheduled notifications from saved state

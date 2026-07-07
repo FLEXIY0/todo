@@ -74,6 +74,23 @@
     </div>
   </div>
 
+  <!-- REMINDER EDITOR -->
+  <div class="dialog-overlay" id="remOverlay">
+    <div class="dialog">
+      <div class="dialog-title">Reminder</div>
+      <input type="time" id="remTime" class="rem-time" value="09:00" />
+      <div class="rem-days" id="remDays"></div>
+      <div class="rem-repeat" id="remRepeat" onclick="toggleRemRep()">
+        <span class="rem-check" id="remRepBox"></span><span>Repeat every week</span>
+      </div>
+      <div class="dialog-buttons">
+        <button class="d-btn cancel" onclick="closeRem()">Cancel</button>
+        <button class="d-btn confirm" onclick="saveRem()">Save</button>
+      </div>
+      <button class="rem-remove" id="remRemove" onclick="removeRem()">Remove reminder</button>
+    </div>
+  </div>
+
   <!-- FIRST-RUN TOUR -->
   <div class="tour-overlay" id="tour">
     <div class="tour-card">

@@ -1,5 +1,5 @@
 // ── App meta ─────────────────────────────────────────────────
-const APP_VERSION = '2.5';
+const APP_VERSION = '2.6';
 const REPO_URL = 'https://github.com/FLEXIY0/todo';
 
 // ── Material icons (Google standard, inline SVG, themeable) ──
@@ -35,6 +35,7 @@ const MI = {
   school: 'M5 13.18v4L12 21l7-3.82v-4L12 17l-7-3.82zM12 3 1 9l11 6 9-4.91V17h2V9L12 3z',
   tag: 'M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58s1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41s-.23-1.06-.59-1.42zM5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7z',
   search: 'M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z',
+  alarm: 'M22 5.72l-4.6-3.86-1.29 1.53 4.6 3.86L22 5.72zM7.88 3.39L6.6 1.86 2 5.71l1.29 1.53 4.59-3.85zM12.5 8H11v6l4.75 2.85.75-1.23-4-2.37V8zM12 4c-4.97 0-9 4.03-9 9s4.02 9 9 9 9-4.03 9-9-4.03-9-9-9zm0 16c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z',
 };
 // emoji currently passed around → Material icon name
 const EMOJI_MI = {
@@ -43,7 +44,7 @@ const EMOJI_MI = {
   '≡': 'list', '∴': 'tree', '◦': 'label', '⏻': 'power', '⟳': 'sync', '🛰': 'dns',
   '📶': 'wifi', '⇣': 'download', '↺': 'restore', '✉': 'share', '↗': 'open',
   '🌿': 'eco', '◐': 'palette', '⚙': 'settings', '±': 'history', 'ⓘ': 'info',
-  '⠿': 'drag', '🎓': 'school', '📶': 'wifi', '🏷': 'tag',
+  '⠿': 'drag', '🎓': 'school', '📶': 'wifi', '🏷': 'tag', '⏰': 'alarm',
 };
 function iconSvg(name) {
   const d = MI[name];
@@ -76,13 +77,49 @@ function openAbout() {
 // board). Each step demonstrates one gesture with a moving "finger".
 const TOUR = [
   { g: 'tap',    t: 'Tap to complete',        d: 'Tap a task to check it off. Tap again to bring it back.' },
-  { g: 'hold',   t: 'Hold to edit',           d: 'Hold a task and release to edit the text. Keep holding for the menu (subtasks, copy, delete).' },
+  { g: 'hold',   t: 'Hold to edit',           d: 'Hold a task and release to edit the text. Keep holding for the menu — subtasks, reminder, copy, delete.' },
   { g: 'double', t: 'Double-tap for subtasks', d: 'Double-tap a task to open its subtasks — a checklist inside a task.' },
   { g: 'swipe',  t: 'Swipe between spaces',    d: 'Swipe left or right to flip pages: To-Do, Wishlist and a Shared space you can sync with friends.' },
   { g: 'right',  t: 'Swipe right for the menu', d: 'On the first page, swipe right to open the menu — themes, settings, history and sync.' },
+  { g: 'pull',   t: 'Pull down to search',    d: 'Pull the list down from the very top to search everything across all spaces at once.' },
   { g: 'press',  t: 'Add & arrange',          d: 'Tap ADD for tasks. Long-press empty space to add a category, or triple-tap it to clear completed.' },
 ];
 let tourStep = 0;
+
+// mini building blocks for the animated demo scenes
+function tgRow(w, target) {
+  return `<div class="tg-row${target ? ' tgt' : ''}"><span class="tg-dot"></span><span class="tg-bar" style="width:${w}%"></span></div>`;
+}
+function tgScene(g) {
+  switch (g) {
+    case 'tap':
+      return `<div class="tg-frame">${tgRow(72)}${tgRow(56, true)}${tgRow(64)}</div><div class="tg-finger"></div>`;
+    case 'hold':
+      return `<div class="tg-frame">${tgRow(64, true)}${tgRow(52)}</div>` +
+        `<div class="tg-menu"><span class="tg-mi" style="width:72%"></span><span class="tg-mi" style="width:54%"></span><span class="tg-mi" style="width:63%"></span></div>` +
+        `<div class="tg-finger"></div>`;
+    case 'double':
+      return `<div class="tg-frame">${tgRow(60, true)}` +
+        `<div class="tg-subs"><div class="tg-sub"><span class="tg-br">├</span><span class="tg-bar" style="width:42%"></span></div>` +
+        `<div class="tg-sub"><span class="tg-br">└</span><span class="tg-bar" style="width:35%"></span></div></div>` +
+        `${tgRow(68)}</div><div class="tg-finger"></div>`;
+    case 'swipe':
+      return `<div class="tg-page b"><div class="tg-frame">${tgRow(48)}${tgRow(66)}</div></div>` +
+        `<div class="tg-page a"><div class="tg-frame">${tgRow(72)}${tgRow(56)}${tgRow(64)}</div></div>` +
+        `<div class="tg-finger"></div>`;
+    case 'right':
+      return `<div class="tg-page a"><div class="tg-frame">${tgRow(72)}${tgRow(56)}${tgRow(64)}</div></div>` +
+        `<div class="tg-drawer"><span class="tg-mi" style="width:74%"></span><span class="tg-mi" style="width:58%"></span><span class="tg-mi" style="width:66%"></span><span class="tg-mi" style="width:50%"></span></div>` +
+        `<div class="tg-finger"></div>`;
+    case 'pull':
+      return `<div class="tg-search">${iconSvg('search')}<span class="tg-bar" style="width:42%"></span></div>` +
+        `<div class="tg-frame">${tgRow(72)}${tgRow(56)}${tgRow(64)}</div>` +
+        `<div class="tg-finger"></div>`;
+    case 'press':
+      return `<div class="tg-frame empty"></div><div class="tg-chip">${iconSvg('add')} Category</div><div class="tg-finger"></div>`;
+  }
+  return '<div class="tg-finger"></div>';
+}
 
 function openTour() {
   closeSheet(); closeDrawer();
@@ -102,13 +139,17 @@ function tourNext() {
 function tourPrev() { if (tourStep > 0) { tourStep--; renderTourStep(); } }
 function renderTourStep() {
   const s = TOUR[tourStep], last = tourStep === TOUR.length - 1;
-  document.getElementById('tourDemo').className = 'tour-demo tg-' + s.g;
-  document.getElementById('tourDemo').innerHTML =
-    '<div class="tg-stage"><div class="tg-card"></div><div class="tg-card sub"></div><div class="tg-finger"></div><div class="tg-arrow"></div></div>';
-  document.getElementById('tourTitle').textContent = s.t;
-  document.getElementById('tourText').textContent = s.d;
+  const demo = document.getElementById('tourDemo');
+  const title = document.getElementById('tourTitle');
+  const text = document.getElementById('tourText');
+  demo.className = 'tour-demo tg-' + s.g;
+  demo.innerHTML = tgScene(s.g);
+  title.textContent = s.t;
+  text.textContent = s.d;
+  // restart the slide-in transition on every step change
+  [demo, title, text].forEach(el => { el.classList.remove('swap'); void el.offsetWidth; el.classList.add('swap'); });
   document.getElementById('tourDots').innerHTML = TOUR.map((_, i) =>
-    `<span class="tour-dot${i === tourStep ? ' on' : ''}"></span>`).join('');
+    `<span class="tour-dot${i === tourStep ? ' on' : ''}${i < tourStep ? ' past' : ''}"></span>`).join('');
   document.getElementById('tourNext').textContent = last ? 'Got it' : 'Next';
   document.getElementById('tourSkip').style.visibility = last ? 'hidden' : 'visible';
 }
@@ -147,6 +188,7 @@ function closeTopLayer() {
     if (tourStep > 0) tourPrev(); else closeTour(false);
     return true;
   }
+  if (document.getElementById('remOverlay').classList.contains('active')) { closeRem(); return true; }
   if (document.getElementById('dialogOverlay').classList.contains('active')) { closeDialog(); return true; }
   if (document.getElementById('sheetOverlay').classList.contains('active')) { closeSheet(); return true; }
   if (drawerOpen) { closeDrawer(); return true; }
@@ -173,7 +215,8 @@ function setTheme(t) {
 const FONT_SCALES = { s: 0.9, m: 1, l: 1.16 };
 const FONT_FAMS = {
   system: 'Arial, Helvetica, sans-serif',
-  mono: "'Courier New', Courier, monospace",
+  // bundled woff2 — identical Latin + Cyrillic (system mono lacks Cyrillic)
+  mono: "'JetBrains Mono', 'Courier New', Courier, monospace",
   serif: "Georgia, 'Times New Roman', serif",
 };
 function applyDisplay() {
@@ -197,7 +240,8 @@ function openDrawer(a)  { drawerOpen = true;  applyOffset(DRAWER_W, a !== false)
 function closeDrawer(a) { drawerOpen = false; applyOffset(0, a !== false);        maskEl.classList.remove('active'); }
 function overlayOpen()  {
   return document.getElementById('sheetOverlay').classList.contains('active') ||
-         document.getElementById('dialogOverlay').classList.contains('active');
+         document.getElementById('dialogOverlay').classList.contains('active') ||
+         document.getElementById('remOverlay').classList.contains('active');
 }
 
 maskEl.addEventListener('click', () => closeDrawer());
@@ -460,10 +504,77 @@ function openTaskSheet(catId, taskId) {
     { icon: '🏷', label: (task.price != null && task.price !== '') ? `Price: ${fmtPrice(Number(task.price))}` : 'Set price', action: () => promptSetPrice(catId, taskId) }
   );
   items.push(
+    { icon: '⏰', label: task.rem ? `Reminder: ${fmtRem(task.rem)}` : 'Set reminder', action: () => openReminderEditor(catId, taskId) },
     { icon: '⧉', label: 'Copy as text', action: () => exportTask(catId, taskId) },
     { icon: '🗑️', label: 'Delete task', danger: true, action: () => deleteTask(catId, taskId) },
   );
   openSheet(lbl, items);
+}
+
+// ── Reminder editor ──────────────────────────────────────────
+let remCtx = null, remSelDays = new Set(), remRep = true;
+
+function openReminderEditor(catId, taskId) {
+  const task = cats().find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
+  if (!task) return;
+  remCtx = { catId, taskId };
+  const rem = task.rem || {};
+  document.getElementById('remTime').value = rem.time || '09:00';
+  remSelDays = new Set(rem.days || []);
+  remRep = rem.rep !== false;
+  renderRemDays();
+  renderRemRep();
+  document.getElementById('remRemove').style.display = task.rem ? '' : 'none';
+  document.getElementById('remOverlay').classList.add('active');
+  armBack();
+}
+function renderRemDays() {
+  const el = document.getElementById('remDays');
+  el.innerHTML = '';
+  DAY_SHORT.forEach((lbl, i) => {
+    const d = i + 1;
+    const chip = document.createElement('span');
+    chip.className = 'rem-day' + (remSelDays.has(d) ? ' on' : '');
+    chip.textContent = lbl;
+    chip.addEventListener('click', () => {
+      remSelDays.has(d) ? remSelDays.delete(d) : remSelDays.add(d);
+      chip.classList.toggle('on');
+    });
+    el.appendChild(chip);
+  });
+}
+function renderRemRep() {
+  document.getElementById('remRepBox').classList.toggle('on', remRep);
+}
+function toggleRemRep() { remRep = !remRep; renderRemRep(); }
+function closeRem() { document.getElementById('remOverlay').classList.remove('active'); remCtx = null; }
+function saveRem() {
+  if (!remCtx) return;
+  const task = cats().find(c => c.id === remCtx.catId)?.tasks.find(t => t.id === remCtx.taskId);
+  if (!task) { closeRem(); return; }
+  const time = document.getElementById('remTime').value;
+  if (!time) { toast('Pick a time'); return; }
+  if (!remSelDays.size) { toast('Pick at least one day'); return; }
+  task.rem = { time, days: [...remSelDays].sort((a, b) => a - b), rep: remRep };
+  delete task.rem.next;
+  task.mt = nextMt();
+  logH('~', `Set reminder ${fmtRem(task.rem)} for "${trunc(task.text)}"`);
+  closeRem();
+  saveState();
+  render();
+  toast('Reminder set · ' + fmtRem(task.rem));
+}
+function removeRem() {
+  if (!remCtx) return;
+  const task = cats().find(c => c.id === remCtx.catId)?.tasks.find(t => t.id === remCtx.taskId);
+  if (task && task.rem) {
+    logH('~', `Removed reminder from "${trunc(task.text)}"`);
+    delete task.rem;
+    task.mt = nextMt();
+    saveState();
+    render();
+  }
+  closeRem();
 }
 
 function openSubtaskSheet(catId, taskId, subId) {
@@ -547,12 +658,34 @@ dialogTa.addEventListener('keydown', e => {
   if (e.key === 'Escape') closeDialog();
 });
 dialogTa.addEventListener('input', () => dialogTa.classList.toggle('empty', !dialogTa.innerText.trim()));
-// keep pasted text plain (contenteditable would otherwise paste rich HTML)
+// keep pasted text plain (contenteditable would otherwise paste rich HTML);
+// execCommand can silently fail in some WebViews — fall back to Range API
 dialogTa.addEventListener('paste', e => {
   e.preventDefault();
   const t = (e.clipboardData || window.clipboardData).getData('text/plain');
-  document.execCommand('insertText', false, t);
+  if (!t) return;
+  let ok = false;
+  try { ok = document.execCommand('insertText', false, t); } catch (err) { }
+  if (!ok) {
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount && dialogTa.contains(sel.anchorNode)) {
+      const r = sel.getRangeAt(0);
+      r.deleteContents();
+      const node = document.createTextNode(t);
+      r.insertNode(node);
+      r.setStartAfter(node);
+      r.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(r);
+    } else {
+      dialogTa.appendChild(document.createTextNode(t));
+    }
+    dialogTa.classList.toggle('empty', !dialogTa.innerText.trim());
+  }
 });
 document.getElementById('dialogOverlay').addEventListener('click', e => {
   if (e.target === document.getElementById('dialogOverlay')) closeDialog();
+});
+document.getElementById('remOverlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('remOverlay')) closeRem();
 });
