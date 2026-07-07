@@ -100,6 +100,7 @@ let connView = false;     // sync connection status screen
 let searchView = false;   // search screen (pull down from the top to open)
 let searchQuery = '';
 let catDragLive = false;  // a category is lifted and being dragged (blocks other gestures)
+const expandedTasks = new Set(); // tasks with their subtask tree unfolded inline (double-tap)
 
 const strikeForwardSet = new Set();
 const strikeReverseSet = new Set();
@@ -110,7 +111,7 @@ let pressTimer = null;
 function visSpaces() {
   return state.spaces.filter(s =>
     s.shared ? state.settings.sharedOn :
-    s.id === 'sp_wish' ? state.settings.wishlistOn : true);
+    s.id === 'sp_wish' ? (state.settings.wishlistOn && !s.hidden) : !s.hidden);
 }
 function curSpace() {
   const v = visSpaces();
@@ -316,12 +317,18 @@ function renderTabs() {
   // if at least one is hidden → show only the current page's label
   if (vis.length && vis.every(sp => !sp.tabDot)) {
     el.style.display = 'flex';
+    let act = null;
     vis.forEach((sp, i) => {
       const t = document.createElement('div');
       t.className = 'space-tab' + (i === spaceIndex ? ' active' : '');
       t.textContent = sp.name;
       t.addEventListener('click', () => flipToSpace(i));
       el.appendChild(t);
+      if (i === spaceIndex) act = t;
+    });
+    // many spaces overflow the row — keep the active tab centered in view
+    if (act) requestAnimationFrame(() => {
+      el.scrollLeft = Math.max(0, act.offsetLeft - (el.clientWidth - act.offsetWidth) / 2);
     });
     return;
   }
@@ -403,8 +410,42 @@ function renderSpace(container, space) {
       const pillVal = subs.length ? taskPrice(task) : (Number(task.price) || 0);
       const priceHtml = (priced && pillVal > 0)
         ? `<span class="task-price">${esc(fmtPrice(pillVal))}</span>` : '';
-      const bellHtml = task.rem ? `<span class="task-bell">${iconSvg('alarm')}</span>` : '';
-      el.innerHTML = `<div class="task-bullet"></div><div class="task-text"><span class="strike-wrap">${esc(task.text)}</span>${subsHtml}</div>${bellHtml}${priceHtml}`;
+      let bellHtml = '';
+      if (task.rem) {
+        const nx = nextRemAt(task.rem);
+        bellHtml = `<span class="task-bell">${iconSvg('schedule')}${nx ? `<span class="bell-when">${fmtRemDate(nx)}</span>` : ''}</span>`;
+      }
+      const attHtml = (task.att && task.att.length) ? `<span class="task-att">${iconSvg('attach')}${task.att.length}</span>` : '';
+      // expanded tree (double-tap): interactive subtask rows in place
+      if (expandedTasks.has(task.id) && subs.length) {
+        const animate = freshExpand === task.id;
+        subsHtml = `<div class="exp-wrap${animate ? '' : ' open'}" data-exp="${task.id}"><div class="exp-inner">${subs.map(s => {
+          const sp = (priced && s.price != null && s.price !== '') ? `<span class="tw-price">${esc(fmtPrice(Number(s.price)))}</span>` : '';
+          return `<div class="exp-sub${s.done ? ' done' : ''}" data-sub-id="${s.id}"><span class="exp-dot"></span><span class="exp-txt">${esc(s.text)}</span>${sp}</div>`;
+        }).join('')}</div></div>`;
+      }
+      el.innerHTML = `<div class="task-bullet"></div><div class="task-text"><span class="strike-wrap">${esc(task.text)}</span>${subsHtml}</div>${attHtml}${bellHtml}${priceHtml}`;
+      // expanded rows: tap toggles the subtask, hold edits it (line-by-line)
+      if (expandedTasks.has(task.id) && subs.length) {
+        el.querySelectorAll('.exp-sub').forEach(row => {
+          const subId = row.dataset.subId;
+          row.addEventListener('click', ev => {
+            ev.stopPropagation(); // don't trigger the task tap
+            const sub = task.subtasks.find(s => s.id === subId);
+            if (!sub) return;
+            sub.done = !sub.done;
+            stamp(sub); syncParentDone(task); stamp(task);
+            logH(sub.done ? '✓' : '○', `${sub.done ? 'Completed' : 'Reopened'} subtask "${trunc(sub.text)}"`);
+            saveState();
+            render();
+          });
+          setupHold(row, () => promptEditSubtask(cat.id, task.id, subId), () => openSubtaskSheet(cat.id, task.id, subId));
+        });
+        if (freshExpand === task.id) {
+          freshExpand = null;
+          requestAnimationFrame(() => requestAnimationFrame(() => { const w = el.querySelector('.exp-wrap'); if (w) w.classList.add('open'); }));
+        }
+      }
       // Single tap toggles (or opens subtasks if it has them); double tap
       // always opens the nested subtask screen — see onTaskTap.
       el.addEventListener('click', () => onTaskTap(cat.id, task.id));
@@ -415,7 +456,7 @@ function renderSpace(container, space) {
 
     const addBtn = document.createElement('div');
     addBtn.className = 'add-task-btn';
-    addBtn.innerHTML = `<div class="add-task-icon">${iconSvg('add')}</div><span>Add task</span>`;
+    addBtn.innerHTML = `<div class="add-task-icon">${iconSvg('add')}</div><span>${t('Add task')}</span>`;
     addBtn.addEventListener('click', () => promptAddTask(cat.id));
     tasksEl.appendChild(addBtn);
 
@@ -430,7 +471,7 @@ function renderSpace(container, space) {
     container.appendChild(hint);
     const addBtn = document.createElement('div');
     addBtn.className = 'add-task-btn center';
-    addBtn.innerHTML = `<div class="add-task-icon">${iconSvg('add')}</div><span>Add category</span>`;
+    addBtn.innerHTML = `<div class="add-task-icon">${iconSvg('add')}</div><span>${t('Add category')}</span>`;
     addBtn.addEventListener('click', () => openDialog('New category', '', val => addCategory(val), false));
     container.appendChild(addBtn);
   }
@@ -474,7 +515,7 @@ function setSharedBoard(m) {
 function renderHistory(container) {
   const back = document.createElement('div');
   back.className = 'subtask-back';
-  back.innerHTML = `<span class="sb-arrow">${iconSvg('back')}</span><span>History</span>`;
+  back.innerHTML = `<span class="sb-arrow">${iconSvg('back')}</span><span>${t('History')}</span>`;
   back.addEventListener('click', closeHistory);
   container.appendChild(back);
 
@@ -535,32 +576,71 @@ function closeHistory() { flipTo(-1, () => { historyView = false; }); }
 function renderSettings(container) {
   const back = document.createElement('div');
   back.className = 'subtask-back';
-  back.innerHTML = `<span class="sb-arrow">${iconSvg('back')}</span><span>Settings</span>`;
+  back.innerHTML = `<span class="sb-arrow">${iconSvg('back')}</span><span>${t('Settings')}</span>`;
   back.addEventListener('click', closeSettings);
   container.appendChild(back);
 
   const frame = document.createElement('div');
   frame.className = 'category';
-  frame.innerHTML = `<div class="category-header"><span class="cat-line"></span><span class="category-name">Spaces</span><span class="cat-line-mid"></span><span class="cat-line"></span></div>`;
+  frame.innerHTML = `<div class="category-header"><span class="cat-line"></span><span class="category-name">${t('Spaces')}</span><span class="cat-line-mid"></span><span class="cat-line"></span></div>`;
   const list = document.createElement('div');
   list.className = 'tasks';
 
-  state.spaces.forEach(sp => {
+  const spaceOn = sp => sp.shared ? state.settings.sharedOn
+    : sp.id === 'sp_wish' ? (state.settings.wishlistOn && !sp.hidden) : !sp.hidden;
+  const nMovable = state.spaces.filter(s => !s.shared).length; // shared stays pinned last
+  state.spaces.forEach((sp, idx) => {
     const row = document.createElement('div');
     row.className = 'set-row';
+    const on = spaceOn(sp);
     const hints = [];
     if (sp.shared) hints.push('shared');
     if (treeOn(sp) && !sp.shared) hints.push('tree');
-    if (sp.tabDot) hints.push('no label');
-    if ((sp.id === 'sp_wish' && !state.settings.wishlistOn) || (sp.shared && !state.settings.sharedOn)) hints.push('off');
-    row.innerHTML = `<span class="set-name">${esc(sp.name)}${hints.length ? `<span class="set-hint"> · ${hints.join(' · ')}</span>` : ''}</span><span class="set-act">›</span>`;
+    if (!on) hints.push('hidden');
+    row.innerHTML = `<span class="set-name${on ? '' : ' off'}">${esc(sp.name)}${hints.length ? `<span class="set-hint"> · ${hints.join(' · ')}</span>` : ''}</span>`;
+    // reorder arrows (not for the pinned shared space)
+    if (!sp.shared && nMovable > 1) {
+      [['↑', -1], ['↓', 1]].forEach(([g, dir]) => {
+        const b = document.createElement('span');
+        b.className = 'sp-ctl';
+        b.textContent = g;
+        const tgt = idx + dir;
+        if (tgt < 0 || tgt >= nMovable) b.classList.add('dim');
+        else b.addEventListener('click', ev => {
+          ev.stopPropagation();
+          state.spaces.splice(tgt, 0, state.spaces.splice(idx, 1)[0]);
+          logH('~', `Moved space "${trunc(sp.name)}"`);
+          render();
+        });
+        row.appendChild(b);
+      });
+    }
+    // visibility eye
+    const eye = document.createElement('span');
+    eye.className = 'sp-ctl' + (on ? '' : ' dim');
+    eye.innerHTML = iconSvg(on ? 'eye' : 'eyeoff');
+    eye.addEventListener('click', ev => {
+      ev.stopPropagation();
+      if (on && visSpaces().length <= 1) { toast('The last visible space stays'); return; }
+      if (sp.shared) state.settings.sharedOn = !state.settings.sharedOn;
+      else if (sp.id === 'sp_wish') { state.settings.wishlistOn = on ? false : true; sp.hidden = false; }
+      else sp.hidden = on;
+      if (sp.shared) { state.settings.sharedOn ? (typeof startSync === 'function' && startSync()) : (typeof stopSync === 'function' && stopSync()); }
+      logH('~', `${on ? 'Hid' : 'Showed'} space "${trunc(sp.name)}"`);
+      render();
+    });
+    row.appendChild(eye);
+    const act = document.createElement('span');
+    act.className = 'set-act';
+    act.textContent = '›';
+    row.appendChild(act);
     row.addEventListener('click', () => openSpaceSheet(sp.id));
     list.appendChild(row);
   });
 
   const addBtn = document.createElement('div');
   addBtn.className = 'add-task-btn';
-  addBtn.innerHTML = `<div class="add-task-icon">${iconSvg('add')}</div><span>Add space</span>`;
+  addBtn.innerHTML = `<div class="add-task-icon">${iconSvg('add')}</div><span>${t('Add space')}</span>`;
   addBtn.addEventListener('click', () => openDialog('New space', '', val => {
     const sp = { id: uid('sp'), name: val, categories: [], mt: nextMt() };
     state.spaces.splice(Math.max(0, state.spaces.length - 1), 0, sp); // before shared
@@ -575,7 +655,7 @@ function renderSettings(container) {
   // ── Fonts ──
   const fonts = document.createElement('div');
   fonts.className = 'category';
-  fonts.innerHTML = `<div class="category-header"><span class="cat-line"></span><span class="category-name">Fonts</span><span class="cat-line-mid"></span><span class="cat-line"></span></div>`;
+  fonts.innerHTML = `<div class="category-header"><span class="cat-line"></span><span class="category-name">${t('Fonts')}</span><span class="cat-line-mid"></span><span class="cat-line"></span></div>`;
   const fl = document.createElement('div');
   fl.className = 'tasks';
   fl.appendChild(chipRow('Text size', [['s', 'Small'], ['m', 'Medium'], ['l', 'Large']],
@@ -596,7 +676,7 @@ function renderSettings(container) {
   // ── Prices (any tree-mode space) ──
   const wish = document.createElement('div');
   wish.className = 'category';
-  wish.innerHTML = `<div class="category-header"><span class="cat-line"></span><span class="category-name">Prices</span><span class="cat-line-mid"></span><span class="cat-line"></span></div>`;
+  wish.innerHTML = `<div class="category-header"><span class="cat-line"></span><span class="category-name">${t('Prices')}</span><span class="cat-line-mid"></span><span class="cat-line"></span></div>`;
   const wl = document.createElement('div');
   wl.className = 'tasks';
   wl.appendChild(chipRow('Currency', [['₽', '₽'], ['$', '$'], ['€', '€'], ['£', '£'], ['¥', '¥']],
@@ -607,6 +687,22 @@ function renderSettings(container) {
     }));
   wish.appendChild(wl);
   container.appendChild(wish);
+
+  // ── Language ──
+  const lang = document.createElement('div');
+  lang.className = 'category';
+  lang.innerHTML = `<div class="category-header"><span class="cat-line"></span><span class="category-name">${t('Language')}</span><span class="cat-line-mid"></span><span class="cat-line"></span></div>`;
+  const ll = document.createElement('div');
+  ll.className = 'tasks';
+  ll.appendChild(chipRow('Language', [['system', 'Auto'], ['en', 'EN'], ['ru', 'РУС'], ['zh', '中文']],
+    state.settings.lang || 'system', v => {
+      state.settings.lang = v;
+      applyLang();
+      logH('~', `Language → ${v}`);
+      render();
+    }));
+  lang.appendChild(ll);
+  container.appendChild(lang);
 }
 
 // a labelled row of mutually-exclusive selectable chips
@@ -615,14 +711,14 @@ function chipRow(label, options, current, onPick) {
   row.className = 'set-row chips';
   const name = document.createElement('span');
   name.className = 'set-name';
-  name.textContent = label;
+  name.textContent = t(label);
   row.appendChild(name);
   const group = document.createElement('div');
   group.className = 'chip-group';
   options.forEach(([val, lbl]) => {
     const chip = document.createElement('span');
     chip.className = 'mode-chip' + (val === current ? ' active' : '');
-    chip.textContent = lbl;
+    chip.textContent = t(lbl);
     chip.addEventListener('click', () => { if (val !== current) onPick(val); });
     group.appendChild(chip);
   });
@@ -634,13 +730,13 @@ function chipRow(label, options, current, onPick) {
 function renderThemes(container) {
   const back = document.createElement('div');
   back.className = 'subtask-back';
-  back.innerHTML = `<span class="sb-arrow">${iconSvg('back')}</span><span>Themes</span>`;
+  back.innerHTML = `<span class="sb-arrow">${iconSvg('back')}</span><span>${t('Themes')}</span>`;
   back.addEventListener('click', closeThemes);
   container.appendChild(back);
 
   const frame = document.createElement('div');
   frame.className = 'category';
-  frame.innerHTML = `<div class="category-header"><span class="cat-line"></span><span class="category-name">Themes</span><span class="cat-line-mid"></span><span class="cat-line"></span></div>`;
+  frame.innerHTML = `<div class="category-header"><span class="cat-line"></span><span class="category-name">${t('Themes')}</span><span class="cat-line-mid"></span><span class="cat-line"></span></div>`;
   const list = document.createElement('div');
   list.className = 'tasks theme-list';
   THEMES.forEach(t => {
@@ -667,37 +763,37 @@ function closeThemes() { flipTo(-1, () => { themesView = false; }); }
 function renderConn(container) {
   const back = document.createElement('div');
   back.className = 'subtask-back';
-  back.innerHTML = `<span class="sb-arrow">${iconSvg('back')}</span><span>Connection</span>`;
+  back.innerHTML = `<span class="sb-arrow">${iconSvg('back')}</span><span>${t('Connection')}</span>`;
   back.addEventListener('click', closeConn);
   container.appendChild(back);
 
   const bar = document.createElement('div');
   bar.className = 'hist-bar';
-  bar.innerHTML = `<span class="sync-lbl">${state.sync.room ? 'Room ' + esc(state.sync.room.id) : 'Not linked'}</span>`;
+  bar.innerHTML = `<span class="sync-lbl">${state.sync.room ? t('Room') + ' ' + esc(state.sync.room.id) : t('Not linked')}</span>`;
   const retest = document.createElement('span');
   retest.className = 'sync-btn';
-  retest.textContent = 'Re-test';
+  retest.textContent = t('Re-test');
   retest.addEventListener('click', () => { if (typeof startSync === 'function') { startSync(); toast('Re-testing…'); } });
   bar.appendChild(retest);
   container.appendChild(bar);
 
   const frame = document.createElement('div');
   frame.className = 'category';
-  frame.innerHTML = `<div class="category-header"><span class="cat-line"></span><span class="category-name">Channels</span><span class="cat-line-mid"></span><span class="cat-line"></span></div>`;
+  frame.innerHTML = `<div class="category-header"><span class="cat-line"></span><span class="category-name">${t('Channels')}</span><span class="cat-line-mid"></span><span class="cat-line"></span></div>`;
   const list = document.createElement('div');
   list.className = 'tasks';
 
   // peer-to-peer row
   const p2pUp = typeof conn !== 'undefined' && conn && conn.open;
   list.appendChild(connRow(p2pUp ? 'up' : (state.sync.room ? 'wait' : 'down'),
-    'Direct P2P', p2pUp ? 'connected' : 'standby', false));
+    t('Direct P2P'), t(p2pUp ? 'connected' : 'standby'), false));
 
   // one row per broker
   const stat = (typeof brokerStat !== 'undefined') ? brokerStat : {};
   (typeof brokerList === 'function' ? brokerList() : []).forEach(url => {
     const s = stat[url] || { state: state.sync.room ? 'wait' : 'down' };
-    const sub = s.state === 'up' ? (s.active ? 'active' + (s.ms ? ' · ' + s.ms + 'ms' : '') : 'reachable' + (s.ms ? ' · ' + s.ms + 'ms' : ''))
-      : s.state === 'wait' ? 'testing…' : 'unreachable';
+    const sub = s.state === 'up' ? (t(s.active ? 'active' : 'reachable') + (s.ms ? ' · ' + s.ms + 'ms' : ''))
+      : s.state === 'wait' ? t('testing…') : t('unreachable');
     list.appendChild(connRow(s.state, brokerHostLabel(url), sub, s.active));
   });
 
@@ -709,20 +805,20 @@ function renderConn(container) {
     const devs = (typeof knownDevices === 'function') ? knownDevices() : [];
     const dframe = document.createElement('div');
     dframe.className = 'category';
-    dframe.innerHTML = `<div class="category-header"><span class="cat-line"></span><span class="category-name">Devices</span><span class="cat-line-mid"></span><span class="category-count">${devs.length + 1}</span><span class="cat-line"></span></div>`;
+    dframe.innerHTML = `<div class="category-header"><span class="cat-line"></span><span class="category-name">${t('Devices')}</span><span class="cat-line-mid"></span><span class="category-count">${devs.length + 1}</span><span class="cat-line"></span></div>`;
     const dlist = document.createElement('div');
     dlist.className = 'tasks';
     const me = (typeof DEV_ID !== 'undefined') ? DEV_ID : '';
-    dlist.appendChild(connRow('up', 'This device', esc(me.slice(0, 6)) + ' · you', true));
+    dlist.appendChild(connRow('up', t('This device'), esc(me.slice(0, 6)) + ' · ' + t('you'), true));
     devs.forEach(d => {
       dlist.appendChild(d.online
         ? connRow('up', d.id.slice(0, 6), fmtAgo(d.ts) + ' · ' + d.via, false)
-        : connRow('off', d.id.slice(0, 6), 'offline · seen ' + fmtAgo(d.ts), false));
+        : connRow('off', d.id.slice(0, 6), t('offline · seen') + ' ' + fmtAgo(d.ts), false));
     });
     if (!devs.length) {
       const hint = document.createElement('div');
       hint.className = 'empty-hint';
-      hint.textContent = 'No other devices heard yet';
+      hint.textContent = t('No other devices heard yet');
       dlist.appendChild(hint);
     }
     dframe.appendChild(dlist);
@@ -732,11 +828,11 @@ function renderConn(container) {
 
 function fmtAgo(ts) {
   const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
-  if (s < 5) return 'now';
-  if (s < 60) return s + 's ago';
-  if (s < 3600) return Math.round(s / 60) + 'm ago';
-  if (s < 86400) return Math.round(s / 3600) + 'h ago';
-  return Math.round(s / 86400) + 'd ago';
+  if (s < 5) return t('now');
+  if (s < 60) return s + t('s ago');
+  if (s < 3600) return Math.round(s / 60) + t('m ago');
+  if (s < 86400) return Math.round(s / 3600) + t('h ago');
+  return Math.round(s / 86400) + t('d ago');
 }
 
 function brokerHostLabel(url) {
@@ -765,12 +861,22 @@ function closeConn() { flipTo(-1, () => { connView = false; }); }
 // ── Search screen ────────────────────────────────────────────
 // Searches tasks, subtasks and category names across all visible spaces.
 // Opened by pulling down from the top of the list (or the drawer item).
-function openSearch() {
+function openSearch(fromPull) {
   if (searchView) return;
   closeDrawer();
   searchQuery = '';
   armBack();
-  flipTo(1, () => { searchView = true; subtaskView = null; historyView = settingsView = themesView = connView = false; });
+  const mutate = () => { searchView = true; subtaskView = null; historyView = settingsView = themesView = connView = false; };
+  if (fromPull) {
+    // pulled in from the top: continue the downward motion instead of a page flip
+    mutate();
+    render();
+    const c = document.getElementById('categoriesContainer');
+    c.classList.add('search-slide');
+    setTimeout(() => c.classList.remove('search-slide'), 420);
+  } else {
+    flipTo(1, mutate);
+  }
 }
 function closeSearch() { flipTo(-1, () => { searchView = false; searchQuery = ''; }); }
 
@@ -781,14 +887,14 @@ function renderSearch(container) {
   const input = document.createElement('input');
   input.className = 'search-input';
   input.type = 'text';
-  input.placeholder = 'Search all spaces…';
+  input.placeholder = t('Search all spaces…');
   input.value = searchQuery;
   input.addEventListener('input', () => { searchQuery = input.value; renderSearchResults(); });
   input.addEventListener('keydown', e => { if (e.key === 'Escape') closeSearch(); });
   bar.appendChild(input);
   const done = document.createElement('span');
   done.className = 'sync-btn';
-  done.textContent = 'Done';
+  done.textContent = t('Done');
   done.addEventListener('click', closeSearch);
   bar.appendChild(done);
   container.appendChild(bar);
@@ -825,9 +931,9 @@ function renderSearchResults() {
   if (!res) return;
   res.innerHTML = '';
   const q = searchQuery.trim().toLowerCase();
-  if (!q) { res.innerHTML = '<div class="empty-hint">Type to search tasks, subtasks and categories</div>'; return; }
+  if (!q) { res.innerHTML = `<div class="empty-hint">${t('Type to search tasks, subtasks and categories')}</div>`; return; }
   const hits = searchHits(q);
-  if (!hits.length) { res.innerHTML = '<div class="empty-hint">Nothing found</div>'; return; }
+  if (!hits.length) { res.innerHTML = `<div class="empty-hint">${t('Nothing found')}</div>`; return; }
   hits.slice(0, 120).forEach(r => {
     const row = document.createElement('div');
     row.className = 'search-row';
@@ -912,10 +1018,10 @@ function pickSendCategory(t, catId, taskId) {
   if (!srcCat) return;
   const list = spCats(t.sp, t.board);
   const items = [
-    { icon: '+', label: `New category "${trunc(srcCat.name, 20)}"`, action: () => askCopyMove(t, null, catId, taskId) },
+    { icon: '+', label: `${window.t('New category')} "${trunc(srcCat.name, 20)}"`, action: () => askCopyMove(t, null, catId, taskId) },
     ...list.map(c => ({ icon: '≡', label: c.name, action: () => askCopyMove(t, c.id, catId, taskId) })),
   ];
-  setTimeout(() => openSheet(`${t.label} — into which category?`, items), 260);
+  setTimeout(() => openSheet(`${t.label} — ${window.t('into which category?')}`, items), 260);
 }
 
 function askCopyMove(t, targetCatId, catId, taskId) {
@@ -948,7 +1054,7 @@ function doSendTask(t, targetCatId, catId, taskId, move) {
   } else {
     logH('+', `Copied task "${trunc(task.text)}" to ${t.label}`);
   }
-  toast(`${move ? 'Moved' : 'Copied'} to ${t.label}`);
+  toast(`${window.t(move ? 'Moved to' : 'Copied to')} ${t.label}`);
   render();
 }
 
@@ -957,7 +1063,7 @@ function openSendCategorySheet(catId) {
   if (!cat) return;
   const targets = sendTargets();
   if (!targets.length) { toast('No other space to send to'); return; }
-  setTimeout(() => openSheet(`Send "${trunc(cat.name, 24)}" to…`, targets.map(t => ({
+  setTimeout(() => openSheet(`${window.t('Send to space…')} "${trunc(cat.name, 24)}"`, targets.map(t => ({
     icon: (t.board === 'wish' || (!t.board && t.sp.tree)) ? '∴' : '≡',
     label: t.label,
     action: () => askCopyMoveCat(t, catId),
@@ -991,8 +1097,124 @@ function doSendCategory(t, catId, move) {
   } else {
     logH('+', `Copied category "${trunc(cat.name)}" to ${t.label}`);
   }
-  toast(`${move ? 'Moved' : 'Copied'} to ${t.label}`);
+  toast(`${window.t(move ? 'Moved to' : 'Copied to')} ${t.label}`);
   render();
+}
+
+// ── Attachments (files / photos pinned to a task) ────────────
+// Metadata (task.att = [{id, name, type, size}]) lives in state and syncs;
+// the bytes live in IndexedDB on THIS device only — other devices see the
+// name but get "not on this device" when opening.
+let attDb = null;
+function attStore(mode, cb) {
+  const run = db => cb(db.transaction('files', mode).objectStore('files'));
+  if (attDb) return run(attDb);
+  const req = indexedDB.open('todo_files', 1);
+  req.onupgradeneeded = () => req.result.createObjectStore('files');
+  req.onsuccess = () => { attDb = req.result; run(attDb); };
+  req.onerror = () => toast('Storage unavailable');
+}
+function attPut(id, blob) { attStore('readwrite', s => s.put(blob, id)); }
+function attGet(id, cb) { attStore('readonly', s => { const r = s.get(id); r.onsuccess = () => cb(r.result || null); r.onerror = () => cb(null); }); }
+function attDel(id) { attStore('readwrite', s => s.delete(id)); }
+
+function fmtSize(n) {
+  if (!n && n !== 0) return '';
+  return n < 1024 ? n + ' B' : n < 1048576 ? Math.round(n / 1024) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
+}
+
+function openAttachments(catId, taskId) {
+  const task = cats().find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
+  if (!task) return;
+  const items = (task.att || []).map(f => ({
+    icon: (f.type || '').startsWith('image/') ? '🖼' : '📄',
+    label: `${f.name} · ${fmtSize(f.size)}`,
+    action: () => openAttActions(catId, taskId, f.id),
+  }));
+  items.push({ icon: '+', label: 'Add file…', action: () => pickAttachment(catId, taskId) });
+  setTimeout(() => openSheet('Attachments', items), 260);
+}
+
+let attInput = null;
+function pickAttachment(catId, taskId) {
+  if (!attInput) {
+    attInput = document.createElement('input');
+    attInput.type = 'file';
+    attInput.style.display = 'none';
+    document.body.appendChild(attInput);
+  }
+  attInput.onchange = () => {
+    const file = attInput.files[0];
+    attInput.value = '';
+    if (!file) return;
+    if (file.size > 20 * 1048576) { toast('Up to 20 MB per file'); return; }
+    const task = cats().find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
+    if (!task) return;
+    const id = uid('f');
+    attPut(id, file);
+    task.att = task.att || [];
+    task.att.push({ id, name: file.name, type: file.type, size: file.size });
+    stamp(task);
+    logH('+', `Attached "${trunc(file.name)}" to "${trunc(task.text)}"`);
+    render();
+    toast('Attached');
+  };
+  attInput.click();
+}
+
+function openAttActions(catId, taskId, fileId) {
+  const task = cats().find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
+  const f = task && (task.att || []).find(x => x.id === fileId);
+  if (!f) return;
+  const items = [];
+  if ((f.type || '').startsWith('image/')) items.push({ icon: '🖼', label: 'View photo', action: () => viewAttachment(f) });
+  items.push({ icon: '✉', label: 'Save / share', action: () => saveAttachment(f) });
+  items.push({
+    icon: '🗑️', label: 'Remove from task', danger: true, action: () => {
+      attDel(f.id);
+      task.att = task.att.filter(x => x.id !== f.id);
+      stamp(task);
+      logH('-', `Removed attachment "${trunc(f.name)}"`);
+      render();
+      toast('Removed');
+    },
+  });
+  setTimeout(() => openSheet(trunc(f.name, 30), items), 260);
+}
+
+function viewAttachment(f) {
+  attGet(f.id, blob => {
+    if (!blob) { toast('File is not on this device'); return; }
+    const ov = document.getElementById('photoView');
+    ov.querySelector('img').src = URL.createObjectURL(blob);
+    ov.classList.add('active');
+    armBack();
+  });
+}
+function closePhoto() {
+  const ov = document.getElementById('photoView');
+  const img = ov.querySelector('img');
+  if (img.src) { try { URL.revokeObjectURL(img.src); } catch (e) { } }
+  img.removeAttribute('src');
+  ov.classList.remove('active');
+}
+
+// "download to a place of your choice": the Android share sheet lets the
+// user pick Files/Drive/etc.; plain browsers get a normal download
+function saveAttachment(f) {
+  attGet(f.id, blob => {
+    if (!blob) { toast('File is not on this device'); return; }
+    const file = new File([blob], f.name, { type: f.type || 'application/octet-stream' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      navigator.share({ files: [file] }).catch(() => { });
+    } else {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = f.name;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    }
+  });
 }
 
 // ── Reminders ────────────────────────────────────────────────
@@ -1036,10 +1258,16 @@ function allRemTasks() {
 }
 
 const DAY_SHORT = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
+// next-fire indicator on task rows: classic DD.MM.YYYY HH:MM
+function fmtRemDate(ts) {
+  const d = new Date(ts);
+  const p = n => String(n).padStart(2, '0');
+  return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
 function fmtRem(rem) {
-  const days = (rem.days || []).length === 7 ? 'daily'
-    : (rem.days || []).map(d => DAY_SHORT[d - 1]).join(' ');
-  return rem.time + ' · ' + days + (rem.rep ? ' · weekly' : ' · once');
+  const days = (rem.days || []).length === 7 ? t('daily')
+    : (rem.days || []).map(d => t(DAY_SHORT[d - 1])).join(' ');
+  return rem.time + ' · ' + days + ' · ' + t(rem.rep ? 'weekly' : 'once');
 }
 
 // Debounced, idempotent re-sync of scheduled notifications from state.
@@ -1198,7 +1426,7 @@ function promptRenameSpace(spId) {
 function deleteSpace(spId) {
   const sp = state.spaces.find(s => s.id === spId);
   if (!sp || sp.id === 'sp_todo' || sp.shared) return;
-  openSheet(`Delete space "${trunc(sp.name, 24)}"?`, [
+  openSheet(`${t('Delete space')} "${trunc(sp.name, 24)}"?`, [
     { icon: '✕', label: 'Yes, delete', danger: true, action: () => {
         logH('-', `Deleted space "${trunc(sp.name)}"`, { k: 'space_del', space: sp });
         state.spaces = state.spaces.filter(s => s.id !== spId);
@@ -1501,6 +1729,19 @@ function beginCategoryDrag(catEl, catId, sx, sy) {
 // cancel the toggle cleanly and open the subtask screen instead.
 const DOUBLE_MS = 280;
 let taskTap = { id: null, t: 0, logTimer: null, undo: null };
+let freshExpand = null; // task id whose unfold should animate on next render
+
+function toggleExpand(taskId) {
+  if (expandedTasks.has(taskId)) {
+    expandedTasks.delete(taskId);
+    const w = document.querySelector(`.task-item[data-id="${taskId}"] .exp-wrap`);
+    if (w) { w.classList.remove('open'); setTimeout(render, 240); } else render();
+  } else {
+    expandedTasks.add(taskId);
+    freshExpand = taskId;
+    render();
+  }
+}
 
 function onTaskTap(catId, taskId) {
   if (holdConsumed) { holdConsumed = false; return; } // a hold just fired
@@ -1510,17 +1751,23 @@ function onTaskTap(catId, taskId) {
   const now = Date.now();
 
   if (taskTap.id === taskId && now - taskTap.t < DOUBLE_MS) {
-    // double tap → open subtasks; undo the optimistic first-tap toggle
+    // double tap: undo/cancel whatever the first tap started, then either
+    // unfold the subtask tree in place (tasks with subs) or open the screen
     clearTimeout(taskTap.logTimer);
     if (taskTap.undo) taskTap.undo();
     taskTap = { id: null, t: 0, logTimer: null, undo: null };
-    openSubtasks(catId, taskId);
+    if (hasSubs) toggleExpand(taskId);
+    else openSubtasks(catId, taskId);
     return;
   }
 
-  if (hasSubs) { // single tap on a task that has subtasks opens them
-    taskTap = { id: taskId, t: now, logTimer: null, undo: null };
-    openSubtasks(catId, taskId);
+  if (hasSubs) {
+    // single tap opens the subtask screen — deferred past the double-tap
+    // window so a quick second tap can unfold the tree inline instead
+    taskTap = {
+      id: taskId, t: now, undo: null,
+      logTimer: setTimeout(() => { taskTap.logTimer = null; openSubtasks(catId, taskId); }, DOUBLE_MS + 30),
+    };
     return;
   }
 
@@ -1611,7 +1858,7 @@ function renderSubtasks(container) {
 
   const addBtn = document.createElement('div');
   addBtn.className = 'add-task-btn';
-  addBtn.innerHTML = `<div class="add-task-icon">${iconSvg('add')}</div><span>Add subtask</span>`;
+  addBtn.innerHTML = `<div class="add-task-icon">${iconSvg('add')}</div><span>${t('Add subtask')}</span>`;
   addBtn.addEventListener('click', () => promptAddSubtask(cat.id, task.id));
   tasksEl.appendChild(addBtn);
 
@@ -1966,7 +2213,7 @@ function parsePrice(val) {
 function promptSetPrice(catId, taskId) {
   const task = cats().find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
   if (!task) return;
-  openDialog(`Price in ${curSym()} — leave empty to clear`, task.price != null ? String(task.price) : '', val => {
+  openDialog(`${t('Set price')} (${curSym()})`, task.price != null ? String(task.price) : '', val => {
     const n = parsePrice(val);
     if (n == null) { delete task.price; logH('~', `Cleared price for "${trunc(task.text)}"`); }
     else { task.price = n; logH('~', `Price ${fmtPrice(n)} for "${trunc(task.text)}"`); }
@@ -1979,7 +2226,7 @@ function promptSetSubPrice(catId, taskId, subId) {
   const task = cats().find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
   const sub = task?.subtasks?.find(s => s.id === subId);
   if (!sub) return;
-  openDialog(`Price in ${curSym()} — leave empty to clear`, sub.price != null ? String(sub.price) : '', val => {
+  openDialog(`${t('Set price')} (${curSym()})`, sub.price != null ? String(sub.price) : '', val => {
     const n = parsePrice(val);
     if (n == null) { delete sub.price; logH('~', `Cleared price for "${trunc(sub.text)}"`); }
     else { sub.price = n; logH('~', `Price ${fmtPrice(n)} for "${trunc(sub.text)}"`); }
@@ -2027,7 +2274,7 @@ function clearSpace() {
 
 function confirmClearAll() {
   closeDrawer();
-  setTimeout(() => openSheet(`Clear "${trunc(curSpace().name, 20)}" space?`, [
+  setTimeout(() => openSheet(`${t('Clear space')} "${trunc(curSpace().name, 20)}"?`, [
     { icon: '✕', label: 'Yes, delete all', danger: true, action: clearSpace },
     { icon: '←', label: 'Cancel', action: () => { } },
   ]), 300);
@@ -2153,6 +2400,7 @@ if (firstRun) {
 }
 applyTheme();
 applyDisplay();
+applyLang();
 fillIcons();
 render();
 if (!state.settings.onboarded) {

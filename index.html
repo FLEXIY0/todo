@@ -12,33 +12,33 @@
 
   <!-- DRAWER -->
   <div id="drawer">
-    <div class="drawer-section">Menu</div>
+    <div class="drawer-section" data-t="Menu">Menu</div>
     <div class="drawer-item" onclick="openSearch()">
-      <span class="di-icon" data-icon="search"></span> Search
+      <span class="di-icon" data-icon="search"></span> <span data-t="Search">Search</span>
     </div>
     <div class="drawer-item" onclick="openThemes()">
-      <span class="di-icon" data-icon="palette"></span> Themes
+      <span class="di-icon" data-icon="palette"></span> <span data-t="Themes">Themes</span>
     </div>
     <div class="drawer-item" onclick="openSettings()">
-      <span class="di-icon" data-icon="settings"></span> Settings
+      <span class="di-icon" data-icon="settings"></span> <span data-t="Settings">Settings</span>
     </div>
     <div class="drawer-item" onclick="openHistory()">
-      <span class="di-icon" data-icon="history"></span> History
+      <span class="di-icon" data-icon="history"></span> <span data-t="History">History</span>
     </div>
     <div class="drawer-item" onclick="openAbout()">
-      <span class="di-icon" data-icon="info"></span> About
+      <span class="di-icon" data-icon="info"></span> <span data-t="About">About</span>
     </div>
     <div class="drawer-spacer"></div>
     <div class="drawer-div"></div>
     <div class="drawer-clear" onclick="confirmClearAll()">
-      <span class="dc-icon" data-icon="delete"></span> Clear All
+      <span class="dc-icon" data-icon="delete"></span> <span data-t="Clear All">Clear All</span>
     </div>
   </div>
 
   <!-- PULL-TO-SEARCH HINT -->
   <div id="pullSearch">
     <span class="ps-ico" data-icon="search"></span>
-    <span class="ps-txt">Pull to search</span>
+    <span class="ps-txt">Search all spaces…</span>
   </div>
 
   <!-- MAIN -->
@@ -66,28 +66,31 @@
       <div class="dialog-title" id="dialogTitle">Rename</div>
       <input type="text" id="dialogInput" placeholder="Category name…" spellcheck="true" autocapitalize="sentences" autocomplete="off" autocorrect="on" />
       <div id="dialogTextarea" class="dialog-edit empty" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="true" autocapitalize="sentences" autocorrect="on" data-placeholder="Describe your task…" style="display:none"></div>
-      <div class="dialog-hint" id="dialogHint" style="display:none">Ctrl + Enter to save</div>
+      <div class="dialog-hint" id="dialogHint" style="display:none" data-t="Ctrl + Enter to save">Ctrl + Enter to save</div>
       <div class="dialog-buttons">
-        <button class="d-btn cancel" onclick="closeDialog()">Cancel</button>
-        <button class="d-btn confirm" onclick="confirmDialog()">Save</button>
+        <button class="d-btn cancel" onclick="closeDialog()" data-t="Cancel">Cancel</button>
+        <button class="d-btn confirm" onclick="confirmDialog()" data-t="Save">Save</button>
       </div>
     </div>
   </div>
 
+  <!-- PHOTO VIEWER -->
+  <div id="photoView" onclick="closePhoto()"><img alt="" /></div>
+
   <!-- REMINDER EDITOR -->
   <div class="dialog-overlay" id="remOverlay">
     <div class="dialog">
-      <div class="dialog-title">Reminder</div>
+      <div class="dialog-title" data-t="Reminder">Reminder</div>
       <input type="time" id="remTime" class="rem-time" value="09:00" />
       <div class="rem-days" id="remDays"></div>
       <div class="rem-repeat" id="remRepeat" onclick="toggleRemRep()">
-        <span class="rem-check" id="remRepBox"></span><span>Repeat every week</span>
+        <span class="rem-check" id="remRepBox"></span><span data-t="Repeat every week">Repeat every week</span>
       </div>
       <div class="dialog-buttons">
-        <button class="d-btn cancel" onclick="closeRem()">Cancel</button>
-        <button class="d-btn confirm" onclick="saveRem()">Save</button>
+        <button class="d-btn cancel" onclick="closeRem()" data-t="Cancel">Cancel</button>
+        <button class="d-btn confirm" onclick="saveRem()" data-t="Save">Save</button>
       </div>
-      <button class="rem-remove" id="remRemove" onclick="removeRem()">Remove reminder</button>
+      <button class="rem-remove" id="remRemove" onclick="removeRem()" data-t="Remove reminder">Remove reminder</button>
     </div>
   </div>
 

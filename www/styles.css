@@ -454,10 +454,15 @@ body.theme-anthropic-dark .flip-content {
 /* ── Space tabs + page flip ─────────────────────────────────── */
 #spaceTabs {
   display: flex;
-  justify-content: center;
+  justify-content: safe center; /* centers few tabs, left-aligns overflow */
   gap: 20px;
   padding: 0 16px 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-behavior: smooth;
 }
+#spaceTabs::-webkit-scrollbar { display: none; }
+.space-tab { flex-shrink: 0; white-space: nowrap; }
 
 .space-tab {
   font-size: 10px;
@@ -1981,32 +1986,37 @@ body.theme-anthropic-dark .flip-content {
   filter: brightness(.85);
 }
 
-/* ── Pull-to-search hint ──────────────────────────────────────── */
+/* ── Pull-to-search: a real search bar slides out from the top ── */
 #pullSearch {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 52px;
+  top: 8px;
+  left: 24px;
+  right: 24px;
+  height: 40px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
+  gap: 10px;
+  padding: 0 16px;
+  border: 1px solid var(--border-dim);
+  border-radius: 999px;
+  background: var(--bg2);
   font-size: 13px;
   letter-spacing: .3px;
   color: var(--text-dim);
-  transform: translateY(-60px);
+  transform: translateY(-58px);
   opacity: 0;
   pointer-events: none;
   z-index: 6;
 }
 #pullSearch.ready {
   color: var(--accent);
+  border-color: var(--accent-dim);
 }
 #pullSearch .mi {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   fill: currentColor;
+  flex-shrink: 0;
 }
 
 /* ── Search screen ────────────────────────────────────────────── */
@@ -2191,6 +2201,103 @@ body.theme-anthropic .rem-time { color-scheme: light; }
   fill: currentColor;
 }
 .task-item.done .task-bell { opacity: .4; }
+
+/* reminder next-fire chip + attachment count on task rows */
+.bell-when {
+  font-size: calc(9px * var(--font-scale));
+  letter-spacing: .3px;
+  margin-left: 3px;
+  white-space: nowrap;
+}
+.task-att {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  color: var(--accent-dim);
+  font-size: calc(10px * var(--font-scale));
+  margin-left: 6px;
+}
+.task-att .mi { width: 12px; height: 12px; fill: currentColor; }
+
+/* inline subtask tree unfolded by double-tap */
+.exp-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows .28s cubic-bezier(.22, 1, .36, 1);
+}
+.exp-wrap.open { grid-template-rows: 1fr; }
+.exp-inner { overflow: hidden; min-height: 0; }
+.exp-sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 4px 7px 14px;
+  border-left: 1px solid var(--border-dim);
+  margin-left: 4px;
+  cursor: pointer;
+}
+.exp-dot {
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid var(--accent-dim);
+  border-radius: 50%;
+  flex-shrink: 0;
+  position: relative;
+  transition: background .15s;
+}
+.exp-sub.done .exp-dot { background: var(--accent); border-color: var(--accent); }
+.exp-txt {
+  font-size: calc(13px * var(--font-scale));
+  color: var(--text);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.exp-sub.done .exp-txt {
+  text-decoration: line-through;
+  text-decoration-color: var(--accent-dim);
+  opacity: .45;
+}
+
+/* fullscreen photo viewer for attachments */
+#photoView {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 600;
+  background: rgba(0, 0, 0, .93);
+  align-items: center;
+  justify-content: center;
+}
+#photoView.active { display: flex; }
+#photoView img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+/* settings: space visibility + order controls */
+.sp-ctl {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  padding: 6px 4px;
+  color: var(--accent);
+  font-size: 14px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.sp-ctl.dim { color: var(--text-dim); opacity: .5; }
+.sp-ctl .mi { width: 16px; height: 16px; fill: currentColor; }
+.set-name.off { opacity: .45; }
+
+/* the search screen sliding down after a pull */
+.search-slide { animation: searchSlide .38s cubic-bezier(.22, 1, .36, 1); }
+@keyframes searchSlide {
+  from { transform: translateY(-30px); opacity: .25; }
+  to { transform: none; opacity: 1; }
+}
 
 /* highlight an item jumped to from search */
 .flash {

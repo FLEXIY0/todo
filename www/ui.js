@@ -1,5 +1,5 @@
 // ── App meta ─────────────────────────────────────────────────
-const APP_VERSION = '2.7';
+const APP_VERSION = '2.8';
 const REPO_URL = 'https://github.com/FLEXIY0/todo';
 
 // ── Material icons (Google standard, inline SVG, themeable) ──
@@ -36,6 +36,12 @@ const MI = {
   tag: 'M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58s1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41s-.23-1.06-.59-1.42zM5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7z',
   search: 'M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z',
   alarm: 'M22 5.72l-4.6-3.86-1.29 1.53 4.6 3.86L22 5.72zM7.88 3.39L6.6 1.86 2 5.71l1.29 1.53 4.59-3.85zM12.5 8H11v6l4.75 2.85.75-1.23-4-2.37V8zM12 4c-4.97 0-9 4.03-9 9s4.02 9 9 9 9-4.03 9-9-4.03-9-9-9zm0 16c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z',
+  schedule: 'M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z',
+  attach: 'M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z',
+  image: 'M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z',
+  eye: 'M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z',
+  eyeoff: 'M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z',
+  file: 'M6 2c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6H6zm7 7V3.5L18.5 9H13z',
 };
 // emoji currently passed around → Material icon name
 const EMOJI_MI = {
@@ -45,7 +51,115 @@ const EMOJI_MI = {
   '📶': 'wifi', '⇣': 'download', '↺': 'restore', '✉': 'share', '↗': 'open',
   '🌿': 'eco', '◐': 'palette', '⚙': 'settings', '±': 'history', 'ⓘ': 'info',
   '⠿': 'drag', '🎓': 'school', '📶': 'wifi', '🏷': 'tag', '⏰': 'alarm',
+  '📎': 'attach', '🖼': 'image', '📄': 'file', '👁': 'eye',
 };
+// ── i18n ─────────────────────────────────────────────────────
+// Keys are the English strings; menus, dialogs, sheets and toasts are
+// translated at the display layer (openSheet/openDialog/toast/chipRow),
+// so most call sites stay plain English. Unknown keys pass through.
+const I18N = {
+  ru: {
+    'Menu': 'Меню', 'Search': 'Поиск', 'Themes': 'Темы', 'Settings': 'Настройки', 'History': 'История', 'About': 'О приложении', 'Clear All': 'Очистить всё',
+    'Cancel': 'Отмена', 'Save': 'Сохранить', 'Ctrl + Enter to save': 'Ctrl + Enter — сохранить', 'Describe your task…': 'Опиши задачу…', 'Category name…': 'Название категории…',
+    'Options': 'Опции', 'Mark complete': 'Отметить выполненной', 'Mark incomplete': 'Снять отметку', 'Subtasks': 'Подзадачи', 'Edit task': 'Изменить задачу', 'Set price': 'Указать цену', 'Price': 'Цена',
+    'Set reminder': 'Напоминание', 'Reminder': 'Напоминание', 'Attachments': 'Вложения', 'Send to space…': 'Отправить в пространство…', 'Copy as text': 'Скопировать текстом', 'Delete task': 'Удалить задачу',
+    'Edit subtask': 'Изменить подзадачу', 'Delete subtask': 'Удалить подзадачу', 'Rename category': 'Переименовать категорию', 'Delete category': 'Удалить категорию', 'Clear completed': 'Убрать выполненные',
+    'Rename space': 'Переименовать пространство', 'Delete space': 'Удалить пространство', 'New category': 'Новая категория', 'New task': 'Новая задача', 'New subtask': 'Новая подзадача', 'New space': 'Новое пространство',
+    'Add space': 'Добавить пространство', 'Add category': 'Добавить категорию', 'Add task': 'Добавить', 'Add subtask': 'Добавить подзадачу', 'Add file…': 'Добавить файл…',
+    'View photo': 'Открыть фото', 'Save / share': 'Сохранить / поделиться', 'Remove from task': 'Убрать из задачи', 'Copy here': 'Скопировать сюда', 'Move here': 'Перенести сюда',
+    'Send task to…': 'Отправить задачу в…', 'Copy or move?': 'Скопировать или перенести?', 'into which category?': 'в какую категорию?',
+    'Repeat every week': 'Повторять каждую неделю', 'Remove reminder': 'Убрать напоминание', 'Pick a time': 'Выбери время', 'Pick at least one day': 'Выбери хотя бы один день', 'Reminder set': 'Напоминание установлено',
+    'daily': 'ежедневно', 'weekly': 'еженед.', 'once': 'один раз', 'Mo': 'Пн', 'Tu': 'Вт', 'We': 'Ср', 'Th': 'Чт', 'Fr': 'Пт', 'Sa': 'Сб', 'Su': 'Вс',
+    'How to use — replay tour': 'Как пользоваться — показать тур', 'Source code on GitHub': 'Исходный код на GitHub',
+    'Show / copy invite code': 'Показать / скопировать код', 'Create an invite': 'Создать приглашение', 'Join with a code': 'Войти по коду', 'Connection status': 'Статус соединения', 'Sync now': 'Синхронизировать',
+    'Use a custom server (if blocked)': 'Свой сервер (если заблокировано)', 'Custom server (set) — change': 'Свой сервер (задан) — изменить', 'Back to default servers': 'Вернуть серверы по умолчанию', 'Leave shared sync': 'Выйти из общего списка',
+    'Syncing…': 'Синхронизация…', 'Copied to clipboard': 'Скопировано', 'Invite code copied to clipboard': 'Код приглашения скопирован', 'Join — paste the invite code': 'Вход — вставь код приглашения',
+    'That does not look like an invite code': 'Это не похоже на код приглашения', 'Using default servers': 'Серверы по умолчанию', 'Custom server saved': 'Свой сервер сохранён',
+    'Send it to the other phone, tap Join there and paste it': 'Отправь код на другой телефон и вставь его там через «Войти по коду»',
+    'Connection': 'Соединение', 'Re-test': 'Проверить', 'Re-testing…': 'Проверяю…', 'Channels': 'Каналы', 'Devices': 'Устройства', 'Direct P2P': 'Прямое P2P', 'connected': 'подключено', 'standby': 'ожидание',
+    'testing…': 'проверка…', 'unreachable': 'недоступен', 'active': 'активен', 'reachable': 'доступен', 'This device': 'Это устройство', 'No other devices heard yet': 'Других устройств пока не слышно', 'Not linked': 'Не связано', 'Room': 'Комната',
+    'Spaces': 'Пространства', 'Fonts': 'Шрифты', 'Prices': 'Цены', 'Language': 'Язык', 'Text size': 'Размер текста', 'Typeface': 'Гарнитура', 'Currency': 'Валюта',
+    'Small': 'Мелкий', 'Medium': 'Средний', 'Large': 'Крупный', 'System': 'Системный', 'Mono': 'Моно', 'Serif': 'С засечками', 'Auto': 'Авто',
+    'shared': 'общее', 'tree': 'дерево', 'hidden': 'скрыто', 'The last visible space stays': 'Последнее видимое пространство нельзя скрыть',
+    'Search all spaces…': 'Поиск по всем пространствам…', 'Type to search tasks, subtasks and categories': 'Ищи задачи, подзадачи и категории', 'Nothing found': 'Ничего не найдено', 'Done': 'Готово',
+    'Attached': 'Прикреплено', 'Removed': 'Убрано', 'Up to 20 MB per file': 'До 20 МБ на файл', 'File is not on this device': 'Файла нет на этом устройстве', 'Storage unavailable': 'Хранилище недоступно',
+    'Task copied to clipboard': 'Задача скопирована', 'Category copied to clipboard': 'Категория скопирована', 'Space copied to clipboard': 'Пространство скопировано', 'Subtask copied to clipboard': 'Подзадача скопирована',
+    'Nothing recognizable to import': 'Не удалось ничего распознать', 'No other space to send to': 'Некуда отправлять — нет других пространств', 'That category is gone': 'Этой категории уже нет',
+    'Allow notifications in system settings': 'Разреши уведомления в настройках системы', 'Paste & edit, then save': 'Вставь и поправь, затем сохрани',
+    'Export all to clipboard': 'Экспортировать всё', 'Paste from clipboard': 'Вставить из буфера', 'Clear all completed': 'Убрать все выполненные', 'Clear space': 'Очистить пространство',
+    'Moved to': 'Перенесено в', 'Copied to': 'Скопировано в', 'Tap to complete': 'Тап — выполнить', 'Hold to edit': 'Удержание — изменить',
+    'Tap a task to check it off. Tap again to bring it back.': 'Коснись задачи, чтобы вычеркнуть. Второй тап вернёт её.',
+    'Hold a task and release to edit the text. Keep holding for the menu — subtasks, reminder, copy, delete.': 'Зажми задачу и отпусти — редактирование. Держи дольше — меню: подзадачи, напоминание, копия, удаление.',
+    'Double-tap for subtasks': 'Дабл-тап — подзадачи', 'Double-tap a task to open its subtasks — a checklist inside a task.': 'Двойной тап раскрывает дерево подзадач прямо в списке. Одиночный — открывает их экран.',
+    'Swipe between spaces': 'Свайп между пространствами', 'Swipe left or right to flip pages: To-Do, Wishlist and a Shared space you can sync with friends.': 'Свайпай влево-вправо: To-Do, Wishlist и Общее пространство для синка с друзьями.',
+    'Swipe right for the menu': 'Свайп вправо — меню', 'On the first page, swipe right to open the menu — themes, settings, history and sync.': 'На первой странице свайп вправо открывает меню: темы, настройки, история, синк.',
+    'Pull down to search': 'Потяни вниз — поиск', 'Pull the list down from the very top to search everything across all spaces at once.': 'Потяни список с самого верха — и ищи сразу по всем пространствам.',
+    'Add & arrange': 'Добавляй и наводи порядок', 'Tap ADD for tasks. Long-press empty space to add a category, or triple-tap it to clear completed.': 'ADD — новая задача. Долгое нажатие на пустом месте — категория, тройной тап — убрать выполненные.',
+    'Next': 'Дальше', 'Got it': 'Понятно', 'Skip': 'Пропустить',
+    'Invite to shared space': 'Приглашение в общее пространство', 'Sync · not linked': 'Синк · не связано', 'Sync': 'Синк', 'no label': 'без метки',
+    'offline · seen': 'офлайн · был', 'you': 'ты', 'now': 'сейчас', 's ago': 'с назад', 'm ago': 'м назад', 'h ago': 'ч назад', 'd ago': 'д назад',
+  },
+  zh: {
+    'Menu': '菜单', 'Search': '搜索', 'Themes': '主题', 'Settings': '设置', 'History': '历史', 'About': '关于', 'Clear All': '全部清空',
+    'Cancel': '取消', 'Save': '保存', 'Ctrl + Enter to save': 'Ctrl + Enter 保存', 'Describe your task…': '描述你的任务…', 'Category name…': '分类名称…',
+    'Options': '选项', 'Mark complete': '标记完成', 'Mark incomplete': '取消完成', 'Subtasks': '子任务', 'Edit task': '编辑任务', 'Set price': '设置价格', 'Price': '价格',
+    'Set reminder': '设置提醒', 'Reminder': '提醒', 'Attachments': '附件', 'Send to space…': '发送到空间…', 'Copy as text': '复制为文本', 'Delete task': '删除任务',
+    'Edit subtask': '编辑子任务', 'Delete subtask': '删除子任务', 'Rename category': '重命名分类', 'Delete category': '删除分类', 'Clear completed': '清除已完成',
+    'Rename space': '重命名空间', 'Delete space': '删除空间', 'New category': '新分类', 'New task': '新任务', 'New subtask': '新子任务', 'New space': '新空间',
+    'Add space': '添加空间', 'Add category': '添加分类', 'Add task': '添加', 'Add subtask': '添加子任务', 'Add file…': '添加文件…',
+    'View photo': '查看照片', 'Save / share': '保存 / 分享', 'Remove from task': '从任务移除', 'Copy here': '复制到这里', 'Move here': '移动到这里',
+    'Send task to…': '发送任务到…', 'Copy or move?': '复制还是移动？', 'into which category?': '选择分类',
+    'Repeat every week': '每周重复', 'Remove reminder': '移除提醒', 'Pick a time': '选择时间', 'Pick at least one day': '至少选择一天', 'Reminder set': '提醒已设置',
+    'daily': '每天', 'weekly': '每周', 'once': '一次', 'Mo': '一', 'Tu': '二', 'We': '三', 'Th': '四', 'Fr': '五', 'Sa': '六', 'Su': '日',
+    'How to use — replay tour': '使用说明 — 重看引导', 'Source code on GitHub': 'GitHub 源代码',
+    'Show / copy invite code': '显示 / 复制邀请码', 'Create an invite': '创建邀请', 'Join with a code': '用邀请码加入', 'Connection status': '连接状态', 'Sync now': '立即同步',
+    'Use a custom server (if blocked)': '自定义服务器（被墙时）', 'Custom server (set) — change': '自定义服务器（已设置）— 修改', 'Back to default servers': '恢复默认服务器', 'Leave shared sync': '退出共享同步',
+    'Syncing…': '同步中…', 'Copied to clipboard': '已复制', 'Invite code copied to clipboard': '邀请码已复制', 'Join — paste the invite code': '加入 — 粘贴邀请码',
+    'That does not look like an invite code': '这不像邀请码', 'Using default servers': '使用默认服务器', 'Custom server saved': '自定义服务器已保存',
+    'Send it to the other phone, tap Join there and paste it': '把邀请码发到另一台手机，在那里点「用邀请码加入」并粘贴',
+    'Connection': '连接', 'Re-test': '重新检测', 'Re-testing…': '检测中…', 'Channels': '通道', 'Devices': '设备', 'Direct P2P': '直连 P2P', 'connected': '已连接', 'standby': '待机',
+    'testing…': '检测中…', 'unreachable': '不可达', 'active': '活跃', 'reachable': '可达', 'This device': '本机', 'No other devices heard yet': '还没有发现其他设备', 'Not linked': '未关联', 'Room': '房间',
+    'Spaces': '空间', 'Fonts': '字体', 'Prices': '价格', 'Language': '语言', 'Text size': '字号', 'Typeface': '字体', 'Currency': '货币',
+    'Small': '小', 'Medium': '中', 'Large': '大', 'System': '系统', 'Mono': '等宽', 'Serif': '衬线', 'Auto': '自动',
+    'shared': '共享', 'tree': '树状', 'hidden': '已隐藏', 'The last visible space stays': '至少保留一个可见空间',
+    'Search all spaces…': '搜索所有空间…', 'Type to search tasks, subtasks and categories': '输入以搜索任务、子任务和分类', 'Nothing found': '没有结果', 'Done': '完成',
+    'Attached': '已附加', 'Removed': '已移除', 'Up to 20 MB per file': '单个文件最大 20 MB', 'File is not on this device': '文件不在本机', 'Storage unavailable': '存储不可用',
+    'Task copied to clipboard': '任务已复制', 'Category copied to clipboard': '分类已复制', 'Space copied to clipboard': '空间已复制', 'Subtask copied to clipboard': '子任务已复制',
+    'Nothing recognizable to import': '没有可识别的内容', 'No other space to send to': '没有其他空间可发送', 'That category is gone': '该分类已不存在',
+    'Allow notifications in system settings': '请在系统设置中允许通知', 'Paste & edit, then save': '粘贴并编辑，然后保存',
+    'Export all to clipboard': '全部导出到剪贴板', 'Paste from clipboard': '从剪贴板粘贴', 'Clear all completed': '清除所有已完成', 'Clear space': '清空空间',
+    'Moved to': '已移动到', 'Copied to': '已复制到', 'Tap to complete': '点按完成',
+    'Tap a task to check it off. Tap again to bring it back.': '点按任务划掉它，再点一下恢复。',
+    'Hold to edit': '长按编辑', 'Hold a task and release to edit the text. Keep holding for the menu — subtasks, reminder, copy, delete.': '按住任务后松开即编辑文字；继续按住打开菜单：子任务、提醒、复制、删除。',
+    'Double-tap for subtasks': '双击展开子任务', 'Double-tap a task to open its subtasks — a checklist inside a task.': '双击任务就地展开子任务树；单击打开子任务页面。',
+    'Swipe between spaces': '滑动切换空间', 'Swipe left or right to flip pages: To-Do, Wishlist and a Shared space you can sync with friends.': '左右滑动翻页：待办、心愿单和可与朋友同步的共享空间。',
+    'Swipe right for the menu': '右滑打开菜单', 'On the first page, swipe right to open the menu — themes, settings, history and sync.': '在第一页右滑打开菜单：主题、设置、历史和同步。',
+    'Pull down to search': '下拉搜索', 'Pull the list down from the very top to search everything across all spaces at once.': '从列表顶部下拉，一次搜索所有空间。',
+    'Add & arrange': '添加与整理', 'Tap ADD for tasks. Long-press empty space to add a category, or triple-tap it to clear completed.': '点 ADD 添加任务。长按空白处新建分类，三击清除已完成。',
+    'Next': '下一步', 'Got it': '知道了', 'Skip': '跳过',
+    'Invite to shared space': '邀请加入共享空间', 'Sync · not linked': '同步 · 未关联', 'Sync': '同步', 'no label': '无标签',
+    'offline · seen': '离线 · 上次', 'you': '我', 'now': '刚刚', 's ago': '秒前', 'm ago': '分钟前', 'h ago': '小时前', 'd ago': '天前',
+  },
+};
+let LANG = 'en';
+function t(s) { const d = I18N[LANG]; return (d && d[s]) || s; }
+function applyLang() {
+  const pref = (state.settings && state.settings.lang) || 'system';
+  const sys = (navigator.language || 'en').toLowerCase();
+  LANG = pref !== 'system' ? pref : sys.startsWith('ru') ? 'ru' : sys.startsWith('zh') ? 'zh' : 'en';
+  fillI18n();
+}
+// translate static HTML: drawer items, dialog buttons, tour buttons, hints
+function fillI18n() {
+  document.querySelectorAll('[data-t]').forEach(el => { el.textContent = t(el.getAttribute('data-t')); });
+  const ta = document.getElementById('dialogTextarea');
+  if (ta) ta.setAttribute('data-placeholder', t('Describe your task…'));
+  const inp = document.getElementById('dialogInput');
+  if (inp) inp.placeholder = t('Category name…');
+  const ps = document.querySelector('#pullSearch .ps-txt');
+  if (ps) ps.textContent = t('Search all spaces…');
+}
+
 function iconSvg(name) {
   const d = MI[name];
   return d ? `<svg class="mi" viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>` : '';
@@ -144,29 +258,30 @@ function renderTourStep() {
   const text = document.getElementById('tourText');
   demo.className = 'tour-demo tg-' + s.g;
   demo.innerHTML = tgScene(s.g);
-  title.textContent = s.t;
-  text.textContent = s.d;
+  title.textContent = t(s.t);
+  text.textContent = t(s.d);
   // restart the slide-in transition on every step change
   [demo, title, text].forEach(el => { el.classList.remove('swap'); void el.offsetWidth; el.classList.add('swap'); });
   document.getElementById('tourDots').innerHTML = TOUR.map((_, i) =>
     `<span class="tour-dot${i === tourStep ? ' on' : ''}${i < tourStep ? ' past' : ''}"></span>`).join('');
-  document.getElementById('tourNext').textContent = last ? 'Got it' : 'Next';
+  document.getElementById('tourNext').textContent = t(last ? 'Got it' : 'Next');
+  document.getElementById('tourSkip').textContent = t('Skip');
   document.getElementById('tourSkip').style.visibility = last ? 'hidden' : 'visible';
 }
 
 // ── Toast ────────────────────────────────────────────────────
 let toastTimer = null;
 function toast(msg) {
-  let t = document.getElementById('toast');
-  if (!t) {
-    t = document.createElement('div');
-    t.id = 'toast';
-    document.body.appendChild(t);
+  let el = document.getElementById('toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'toast';
+    document.body.appendChild(el);
   }
-  t.textContent = msg;
-  t.classList.add('show');
+  el.textContent = t(msg);
+  el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), 1700);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 1700);
 }
 
 // ── Hardware back gesture ────────────────────────────────────
@@ -188,6 +303,7 @@ function closeTopLayer() {
     if (tourStep > 0) tourPrev(); else closeTour(false);
     return true;
   }
+  if (document.getElementById('photoView').classList.contains('active')) { closePhoto(); return true; }
   if (document.getElementById('remOverlay').classList.contains('active')) { closeRem(); return true; }
   if (document.getElementById('dialogOverlay').classList.contains('active')) { closeDialog(); return true; }
   if (document.getElementById('sheetOverlay').classList.contains('active')) { closeSheet(); return true; }
@@ -254,11 +370,15 @@ const PULL_MAX = 130;            // px of pull that maps to a full reveal
 function setPull(p) {
   const el = document.getElementById('pullSearch');
   if (!el) return;
-  el.style.transform = `translateY(${-60 + p * 66}px)`;
-  el.style.opacity = String(Math.min(1, p * 1.3));
+  // the search bar slides out from under the header while the list follows
+  el.style.transform = `translateY(${-58 + p * 64}px)`;
+  el.style.opacity = String(Math.min(1, p * 1.25));
   el.classList.toggle('ready', p >= 1);
-  const t = el.querySelector('.ps-txt');
-  if (t) t.textContent = p >= 1 ? 'Release to search' : 'Pull to search';
+  const list = document.getElementById('categoriesContainer');
+  if (list) {
+    list.style.transition = p ? 'none' : 'transform .28s cubic-bezier(.22,1,.36,1)';
+    list.style.transform = p ? `translateY(${Math.round(p * 54)}px)` : '';
+  }
 }
 
 function nestedView() { return subtaskView || historyView || settingsView || themesView || connView || searchView; }
@@ -349,7 +469,7 @@ document.addEventListener('touchend', (e) => {
     pullActive = false;
     const open = pullP >= 1;
     pullP = 0; setPull(0);
-    if (open) openSearch();
+    if (open) openSearch(true);
     return;
   }
   if (backDrag) {
@@ -449,13 +569,13 @@ mainEl.addEventListener('click', e => {
 
 // ── Bottom Sheet ─────────────────────────────────────────────
 function openSheet(label, items) {
-  document.getElementById('sheetLabel').textContent = label;
+  document.getElementById('sheetLabel').textContent = t(label);
   const c = document.getElementById('sheetItems');
   c.innerHTML = '';
   items.forEach(item => {
     const el = document.createElement('div');
     el.className = 'sheet-item' + (item.danger ? ' danger' : '');
-    el.innerHTML = `<span class="s-icon">${renderGlyph(item.icon)}</span>${esc(item.label)}`;
+    el.innerHTML = `<span class="s-icon">${renderGlyph(item.icon)}</span>${esc(t(item.label))}`;
     el.addEventListener('click', () => { closeSheet(); item.action(); });
     c.appendChild(el);
   });
@@ -502,10 +622,11 @@ function openTaskSheet(catId, taskId) {
   // a task can have its own price only when it has no subtasks (a leaf);
   // tasks with subtasks roll up the subtasks' prices instead
   if (hasPrices(curSpace()) && !hasSubs) items.push(
-    { icon: '🏷', label: (task.price != null && task.price !== '') ? `Price: ${fmtPrice(Number(task.price))}` : 'Set price', action: () => promptSetPrice(catId, taskId) }
+    { icon: '🏷', label: (task.price != null && task.price !== '') ? `${t('Price')}: ${fmtPrice(Number(task.price))}` : 'Set price', action: () => promptSetPrice(catId, taskId) }
   );
   items.push(
-    { icon: '⏰', label: task.rem ? `Reminder: ${fmtRem(task.rem)}` : 'Set reminder', action: () => openReminderEditor(catId, taskId) },
+    { icon: '⏰', label: task.rem ? `${t('Reminder')}: ${fmtRem(task.rem)}` : 'Set reminder', action: () => openReminderEditor(catId, taskId) },
+    { icon: '📎', label: t('Attachments') + (task.att && task.att.length ? ` (${task.att.length})` : ''), action: () => openAttachments(catId, taskId) },
     { icon: '→', label: 'Send to space…', action: () => openSendTaskSheet(catId, taskId) },
     { icon: '⧉', label: 'Copy as text', action: () => exportTask(catId, taskId) },
     { icon: '🗑️', label: 'Delete task', danger: true, action: () => deleteTask(catId, taskId) },
@@ -514,7 +635,16 @@ function openTaskSheet(catId, taskId) {
 }
 
 // ── Reminder editor ──────────────────────────────────────────
-let remCtx = null, remSelDays = new Set(), remRep = true;
+let remCtx = null, remSelDays = new Set(), remRep = true, remDaysTouched = false;
+
+// the day that "HH:MM" next lands on: today if still ahead, else tomorrow
+function smartRemDay(time) {
+  const t = (time || '').split(':').map(Number);
+  const now = new Date();
+  const ahead = t.length === 2 && (t[0] > now.getHours() || (t[0] === now.getHours() && t[1] > now.getMinutes()));
+  const iso = ((now.getDay() + 6) % 7) + 1;
+  return ahead ? iso : (iso % 7) + 1;
+}
 
 function openReminderEditor(catId, taskId) {
   const task = cats().find(c => c.id === catId)?.tasks.find(t => t.id === taskId);
@@ -524,6 +654,9 @@ function openReminderEditor(catId, taskId) {
   document.getElementById('remTime').value = rem.time || '09:00';
   remSelDays = new Set(rem.days || []);
   remRep = rem.rep !== false;
+  remDaysTouched = !!(rem.days && rem.days.length);
+  // picking a time pre-selects its day right away (until days are touched)
+  if (!remSelDays.size) remSelDays = new Set([smartRemDay(rem.time || '09:00')]);
   renderRemDays();
   renderRemRep();
   document.getElementById('remRemove').style.display = task.rem ? '' : 'none';
@@ -539,6 +672,7 @@ function renderRemDays() {
     chip.className = 'rem-day' + (remSelDays.has(d) ? ' on' : '');
     chip.textContent = lbl;
     chip.addEventListener('click', () => {
+      remDaysTouched = true;
       remSelDays.has(d) ? remSelDays.delete(d) : remSelDays.add(d);
       chip.classList.toggle('on');
     });
@@ -548,6 +682,12 @@ function renderRemDays() {
 function renderRemRep() {
   document.getElementById('remRepBox').classList.toggle('on', remRep);
 }
+// keep the auto-picked day in sync with the chosen time until days are touched
+document.getElementById('remTime').addEventListener('input', () => {
+  if (remDaysTouched) return;
+  remSelDays = new Set([smartRemDay(document.getElementById('remTime').value)]);
+  renderRemDays();
+});
 function toggleRemRep() { remRep = !remRep; renderRemRep(); }
 function closeRem() { document.getElementById('remOverlay').classList.remove('active'); remCtx = null; }
 function saveRem() {
@@ -564,7 +704,7 @@ function saveRem() {
   closeRem();
   saveState();
   render();
-  toast('Reminder set · ' + fmtRem(task.rem));
+  toast(t('Reminder set') + ' · ' + fmtRem(task.rem));
 }
 function removeRem() {
   if (!remCtx) return;
@@ -589,7 +729,7 @@ function openSubtaskSheet(catId, taskId, subId) {
     { icon: '✏️', label: 'Edit subtask',   action: () => promptEditSubtask(catId, taskId, subId) },
   ];
   if (hasPrices(curSpace())) items.push(
-    { icon: '🏷', label: (sub.price != null && sub.price !== '') ? `Price: ${fmtPrice(Number(sub.price))}` : 'Set price', action: () => promptSetSubPrice(catId, taskId, subId) }
+    { icon: '🏷', label: (sub.price != null && sub.price !== '') ? `${t('Price')}: ${fmtPrice(Number(sub.price))}` : 'Set price', action: () => promptSetSubPrice(catId, taskId, subId) }
   );
   items.push(
     { icon: '⧉', label: 'Copy as text',   action: () => exportSubtask(catId, taskId, subId) },
@@ -621,7 +761,7 @@ function placeCaretEnd(el) {
 
 function openDialog(title, value, cb, isTask, isDraft) {
   dialogIsTask = !!isTask; dialogCb = cb; dialogDraft = !!isDraft;
-  document.getElementById('dialogTitle').textContent = title;
+  document.getElementById('dialogTitle').textContent = t(title);
   const inp = document.getElementById('dialogInput');
   const ta  = document.getElementById('dialogTextarea');
   const ht  = document.getElementById('dialogHint');
