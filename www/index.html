@@ -35,10 +35,9 @@
     </div>
   </div>
 
-  <!-- PULL-TO-SEARCH HINT -->
+  <!-- PULL-TO-SEARCH DROP -->
   <div id="pullSearch">
-    <span class="ps-ico" data-icon="search"></span>
-    <span class="ps-txt">Search all spaces…</span>
+    <div class="drop"><span class="drop-ico" data-icon="search"></span></div>
   </div>
 
   <!-- MAIN -->
@@ -83,6 +82,8 @@
       <div class="dialog-title" data-t="Reminder">Reminder</div>
       <input type="time" id="remTime" class="rem-time" value="09:00" />
       <div class="rem-days" id="remDays"></div>
+      <div class="rem-or"><span class="rem-or-line"></span><span class="rem-or-txt" data-t="or a specific date">or a specific date</span><span class="rem-or-line"></span></div>
+      <input type="date" id="remDate" class="rem-time rem-date" />
       <div class="rem-repeat" id="remRepeat" onclick="toggleRemRep()">
         <span class="rem-check" id="remRepBox"></span><span data-t="Repeat every week">Repeat every week</span>
       </div>

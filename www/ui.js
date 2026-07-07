@@ -1,5 +1,5 @@
 // ── App meta ─────────────────────────────────────────────────
-const APP_VERSION = '2.8';
+const APP_VERSION = '2.9';
 const REPO_URL = 'https://github.com/FLEXIY0/todo';
 
 // ── Material icons (Google standard, inline SVG, themeable) ──
@@ -98,6 +98,7 @@ const I18N = {
     'Next': 'Дальше', 'Got it': 'Понятно', 'Skip': 'Пропустить',
     'Invite to shared space': 'Приглашение в общее пространство', 'Sync · not linked': 'Синк · не связано', 'Sync': 'Синк', 'no label': 'без метки',
     'offline · seen': 'офлайн · был', 'you': 'ты', 'now': 'сейчас', 's ago': 'с назад', 'm ago': 'м назад', 'h ago': 'ч назад', 'd ago': 'д назад',
+    'or a specific date': 'или конкретная дата', 'here': 'здесь', 'No other category here': 'Здесь нет других категорий', 'That moment is already past': 'Этот момент уже прошёл', 'Could not share the file': 'Не удалось поделиться файлом',
   },
   zh: {
     'Menu': '菜单', 'Search': '搜索', 'Themes': '主题', 'Settings': '设置', 'History': '历史', 'About': '关于', 'Clear All': '全部清空',
@@ -139,6 +140,7 @@ const I18N = {
     'Next': '下一步', 'Got it': '知道了', 'Skip': '跳过',
     'Invite to shared space': '邀请加入共享空间', 'Sync · not linked': '同步 · 未关联', 'Sync': '同步', 'no label': '无标签',
     'offline · seen': '离线 · 上次', 'you': '我', 'now': '刚刚', 's ago': '秒前', 'm ago': '分钟前', 'h ago': '小时前', 'd ago': '天前',
+    'or a specific date': '或指定日期', 'here': '当前', 'No other category here': '这里没有其他分类', 'That moment is already past': '该时间已经过去', 'Could not share the file': '无法分享文件',
   },
 };
 let LANG = 'en';
@@ -156,8 +158,6 @@ function fillI18n() {
   if (ta) ta.setAttribute('data-placeholder', t('Describe your task…'));
   const inp = document.getElementById('dialogInput');
   if (inp) inp.placeholder = t('Category name…');
-  const ps = document.querySelector('#pullSearch .ps-txt');
-  if (ps) ps.textContent = t('Search all spaces…');
 }
 
 function iconSvg(name) {
@@ -370,9 +370,9 @@ const PULL_MAX = 130;            // px of pull that maps to a full reveal
 function setPull(p) {
   const el = document.getElementById('pullSearch');
   if (!el) return;
-  // the search bar slides out from under the header while the list follows
-  el.style.transform = `translateY(${-58 + p * 64}px)`;
-  el.style.opacity = String(Math.min(1, p * 1.25));
+  // the drop stretches down from the top edge while the list follows
+  el.style.setProperty('--p', p.toFixed(3));
+  if (p >= 1 && !el.classList.contains('ready') && navigator.vibrate) navigator.vibrate(12);
   el.classList.toggle('ready', p >= 1);
   const list = document.getElementById('categoriesContainer');
   if (list) {
@@ -651,12 +651,16 @@ function openReminderEditor(catId, taskId) {
   if (!task) return;
   remCtx = { catId, taskId };
   const rem = task.rem || {};
-  document.getElementById('remTime').value = rem.time || '09:00';
-  remSelDays = new Set(rem.days || []);
-  remRep = rem.rep !== false;
-  remDaysTouched = !!(rem.days && rem.days.length);
+  // default to the current time (rounded up to 5 min) — easier to reason from
+  const now = new Date(Date.now() + 5 * 60000);
+  const cur = `${String(now.getHours()).padStart(2, '0')}:${String(Math.floor(now.getMinutes() / 5) * 5).padStart(2, '0')}`;
+  document.getElementById('remTime').value = rem.time || cur;
+  document.getElementById('remDate').value = rem.date || '';
+  remSelDays = new Set(rem.date ? [] : (rem.days || []));
+  remRep = rem.rep !== false && !rem.date;
+  remDaysTouched = !!(rem.days && rem.days.length) || !!rem.date;
   // picking a time pre-selects its day right away (until days are touched)
-  if (!remSelDays.size) remSelDays = new Set([smartRemDay(rem.time || '09:00')]);
+  if (!remSelDays.size && !rem.date) remSelDays = new Set([smartRemDay(rem.time || cur)]);
   renderRemDays();
   renderRemRep();
   document.getElementById('remRemove').style.display = task.rem ? '' : 'none';
@@ -673,6 +677,7 @@ function renderRemDays() {
     chip.textContent = lbl;
     chip.addEventListener('click', () => {
       remDaysTouched = true;
+      document.getElementById('remDate').value = ''; // weekdays and a fixed date are exclusive
       remSelDays.has(d) ? remSelDays.delete(d) : remSelDays.add(d);
       chip.classList.toggle('on');
     });
@@ -688,6 +693,15 @@ document.getElementById('remTime').addEventListener('input', () => {
   remSelDays = new Set([smartRemDay(document.getElementById('remTime').value)]);
   renderRemDays();
 });
+// picking a calendar date clears the weekday chips (they're exclusive)
+document.getElementById('remDate').addEventListener('input', () => {
+  if (!document.getElementById('remDate').value) return;
+  remDaysTouched = true;
+  remSelDays.clear();
+  remRep = false;
+  renderRemDays();
+  renderRemRep();
+});
 function toggleRemRep() { remRep = !remRep; renderRemRep(); }
 function closeRem() { document.getElementById('remOverlay').classList.remove('active'); remCtx = null; }
 function saveRem() {
@@ -695,9 +709,15 @@ function saveRem() {
   const task = cats().find(c => c.id === remCtx.catId)?.tasks.find(t => t.id === remCtx.taskId);
   if (!task) { closeRem(); return; }
   const time = document.getElementById('remTime').value;
+  const date = document.getElementById('remDate').value;
   if (!time) { toast('Pick a time'); return; }
-  if (!remSelDays.size) { toast('Pick at least one day'); return; }
-  task.rem = { time, days: [...remSelDays].sort((a, b) => a - b), rep: remRep };
+  if (!date && !remSelDays.size) { toast('Pick at least one day'); return; }
+  if (date) {
+    if (new Date(date + 'T' + time).getTime() <= Date.now()) { toast('That moment is already past'); return; }
+    task.rem = { time, date };
+  } else {
+    task.rem = { time, days: [...remSelDays].sort((a, b) => a - b), rep: remRep };
+  }
   delete task.rem.next;
   task.mt = nextMt();
   logH('~', `Set reminder ${fmtRem(task.rem)} for "${trunc(task.text)}"`);

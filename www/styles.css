@@ -1986,37 +1986,58 @@ body.theme-anthropic-dark .flip-content {
   filter: brightness(.85);
 }
 
-/* ── Pull-to-search: a real search bar slides out from the top ── */
+/* ── Pull-to-search: a liquid drop stretches down from the top edge ── */
 #pullSearch {
   position: fixed;
-  top: 8px;
-  left: 24px;
-  right: 24px;
-  height: 40px;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 0;
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 16px;
-  border: 1px solid var(--border-dim);
-  border-radius: 999px;
-  background: var(--bg2);
-  font-size: 13px;
-  letter-spacing: .3px;
-  color: var(--text-dim);
-  transform: translateY(-58px);
-  opacity: 0;
+  justify-content: center;
   pointer-events: none;
   z-index: 6;
+  --p: 0;
 }
-#pullSearch.ready {
-  color: var(--accent);
-  border-color: var(--accent-dim);
+.drop {
+  position: absolute;
+  top: 0;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .3);
+  transform: translateY(calc(var(--p) * 78px - 46px)) scale(calc(.5 + var(--p) * .5));
+  opacity: calc(var(--p) * 1.5);
 }
-#pullSearch .mi {
-  width: 16px;
-  height: 16px;
-  fill: currentColor;
-  flex-shrink: 0;
+/* the neck: full-width at the edge, tapering into the drop, thins as it stretches */
+.drop::before {
+  content: '';
+  position: absolute;
+  bottom: 62%;
+  left: 50%;
+  width: calc(30px - var(--p) * 20px);
+  height: calc(var(--p) * 58px + 6px);
+  transform: translateX(-50%);
+  background: var(--accent);
+  clip-path: polygon(0 0, 100% 0, 64% 100%, 36% 100%);
+  opacity: calc(.9 - var(--p) * .35);
+  transition: opacity .12s;
+}
+/* past the threshold the drop detaches and pops */
+#pullSearch.ready .drop {
+  transform: translateY(calc(var(--p) * 78px - 46px)) scale(1.1);
+  box-shadow: 0 6px 20px var(--accent-dim);
+  transition: transform .15s cubic-bezier(.34, 1.56, .64, 1);
+}
+#pullSearch.ready .drop::before { opacity: 0; }
+.drop .mi {
+  width: 19px;
+  height: 19px;
+  fill: var(--bg);
 }
 
 /* ── Search screen ────────────────────────────────────────────── */
@@ -2112,6 +2133,23 @@ body.theme-anthropic-dark .flip-content {
   color-scheme: dark;
 }
 body.theme-anthropic .rem-time { color-scheme: light; }
+.rem-or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 0 10px;
+}
+.rem-or-line { flex: 1; height: 1px; background: var(--border-dim); }
+.rem-or-txt {
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.rem-date {
+  font-size: calc(15px * var(--font-scale));
+  margin-bottom: 10px;
+}
 .rem-days {
   display: flex;
   gap: 6px;
@@ -2230,34 +2268,43 @@ body.theme-anthropic .rem-time { color-scheme: light; }
 .exp-inner { overflow: hidden; min-height: 0; }
 .exp-sub {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 4px 7px 14px;
-  border-left: 1px solid var(--border-dim);
-  margin-left: 4px;
+  align-items: baseline;
+  gap: 7px;
+  padding: 6px 4px 6px 8px;
   cursor: pointer;
 }
-.exp-dot {
-  width: 12px;
-  height: 12px;
-  border: 1.5px solid var(--accent-dim);
-  border-radius: 50%;
+.exp-sub .tw-br {
+  color: var(--accent-dim);
+  font-size: calc(12px * var(--font-scale));
   flex-shrink: 0;
-  position: relative;
-  transition: background .15s;
+  line-height: 1.3;
 }
-.exp-sub.done .exp-dot { background: var(--accent); border-color: var(--accent); }
 .exp-txt {
+  position: relative;
   font-size: calc(13px * var(--font-scale));
+  line-height: 1.35;
   color: var(--text);
   min-width: 0;
   overflow-wrap: anywhere;
+  transition: opacity .28s;
 }
-.exp-sub.done .exp-txt {
-  text-decoration: line-through;
-  text-decoration-color: var(--accent-dim);
-  opacity: .45;
+/* the strike line sweeps across on toggle, both directions */
+.exp-txt::after {
+  content: '';
+  position: absolute;
+  left: -2px;
+  right: -2px;
+  top: 52%;
+  height: 1.5px;
+  border-radius: 1px;
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform .3s cubic-bezier(.4, 0, .2, 1);
 }
+.exp-sub.done .exp-txt { opacity: .45; }
+.exp-sub.done .exp-txt::after { transform: scaleX(1); }
+.exp-sub.done .tw-price { opacity: .45; }
 
 /* fullscreen photo viewer for attachments */
 #photoView {

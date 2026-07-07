@@ -419,9 +419,10 @@ function renderSpace(container, space) {
       // expanded tree (double-tap): interactive subtask rows in place
       if (expandedTasks.has(task.id) && subs.length) {
         const animate = freshExpand === task.id;
-        subsHtml = `<div class="exp-wrap${animate ? '' : ' open'}" data-exp="${task.id}"><div class="exp-inner">${subs.map(s => {
+        // same look as the classic tree (├ └ twigs), but each line is live
+        subsHtml = `<div class="exp-wrap${animate ? '' : ' open'}" data-exp="${task.id}"><div class="exp-inner">${subs.map((s, i) => {
           const sp = (priced && s.price != null && s.price !== '') ? `<span class="tw-price">${esc(fmtPrice(Number(s.price)))}</span>` : '';
-          return `<div class="exp-sub${s.done ? ' done' : ''}" data-sub-id="${s.id}"><span class="exp-dot"></span><span class="exp-txt">${esc(s.text)}</span>${sp}</div>`;
+          return `<div class="exp-sub${s.done ? ' done' : ''}" data-sub-id="${s.id}"><span class="tw-br">${i === subs.length - 1 ? '└' : '├'}</span><span class="exp-txt">${esc(s.text)}</span>${sp}</div>`;
         }).join('')}</div></div>`;
       }
       el.innerHTML = `<div class="task-bullet"></div><div class="task-text"><span class="strike-wrap">${esc(task.text)}</span>${subsHtml}</div>${attHtml}${bellHtml}${priceHtml}`;
@@ -437,7 +438,10 @@ function renderSpace(container, space) {
             stamp(sub); syncParentDone(task); stamp(task);
             logH(sub.done ? '✓' : '○', `${sub.done ? 'Completed' : 'Reopened'} subtask "${trunc(sub.text)}"`);
             saveState();
-            render();
+            // strike sweeps via CSS on the class flip; settle with a render
+            // after the animation so counts/parent state catch up
+            row.classList.toggle('done', sub.done);
+            setTimeout(render, 340);
           });
           setupHold(row, () => promptEditSubtask(cat.id, task.id, subId), () => openSubtaskSheet(cat.id, task.id, subId));
         });
@@ -1004,8 +1008,10 @@ function openSendTaskSheet(catId, taskId) {
   const cat = cats().find(c => c.id === catId);
   const task = cat?.tasks.find(t => t.id === taskId);
   if (!task) return;
-  const targets = sendTargets();
-  if (!targets.length) { toast('No other space to send to'); return; }
+  // the current board comes first — moving between categories in place
+  const cur = curSpace();
+  const curBoard = cur.shared ? (cur.mode || 'todo') : null;
+  const targets = [{ sp: cur, board: curBoard, label: cur.name + ' · ' + window.t('here') }, ...sendTargets()];
   setTimeout(() => openSheet('Send task to…', targets.map(t => ({
     icon: (t.board === 'wish' || (!t.board && t.sp.tree)) ? '∴' : '≡',
     label: t.label,
@@ -1016,7 +1022,8 @@ function openSendTaskSheet(catId, taskId) {
 function pickSendCategory(t, catId, taskId) {
   const srcCat = cats().find(c => c.id === catId);
   if (!srcCat) return;
-  const list = spCats(t.sp, t.board);
+  const list = spCats(t.sp, t.board).filter(c => c !== srcCat); // not into itself
+  if (!list.length && t.sp === curSpace()) { toast('No other category here'); return; }
   const items = [
     { icon: '+', label: `${window.t('New category')} "${trunc(srcCat.name, 20)}"`, action: () => askCopyMove(t, null, catId, taskId) },
     ...list.map(c => ({ icon: '≡', label: c.name, action: () => askCopyMove(t, c.id, catId, taskId) })),
@@ -1040,7 +1047,8 @@ function doSendTask(t, targetCatId, catId, taskId, move) {
   if (targetCatId && !target) { toast('That category is gone'); return; }
   if (!target) {
     // reuse a same-named category in the target instead of duplicating it
-    target = list.find(c => c.name === srcCat.name);
+    // (but never the source itself when sending within the same board)
+    target = list.find(c => c.name === srcCat.name && c !== srcCat);
     if (!target) {
       target = { id: uid('c'), name: srcCat.name, tasks: [], mt: nextMt() };
       list.push(target);
@@ -1199,11 +1207,26 @@ function closePhoto() {
   ov.classList.remove('active');
 }
 
-// "download to a place of your choice": the Android share sheet lets the
-// user pick Files/Drive/etc.; plain browsers get a normal download
+// "download to a place of your choice": on Android we write the blob into
+// the app cache via Filesystem and hand it to the native share sheet
+// (Files/Drive/Telegram…) — a[download] is dead inside a WebView. Plain
+// browsers keep Web Share / download fallbacks.
 function saveAttachment(f) {
   attGet(f.id, blob => {
     if (!blob) { toast('File is not on this device'); return; }
+    const P = window.Capacitor && Capacitor.Plugins;
+    if (P && P.Filesystem && P.Share) {
+      const rd = new FileReader();
+      rd.onload = async () => {
+        try {
+          const b64 = String(rd.result).split(',')[1];
+          const w = await P.Filesystem.writeFile({ path: 'share/' + f.name, data: b64, directory: 'CACHE', recursive: true });
+          await P.Share.share({ title: f.name, url: w.uri });
+        } catch (e) { if (!/cancel/i.test(String(e && e.message))) toast('Could not share the file'); }
+      };
+      rd.readAsDataURL(blob);
+      return;
+    }
     const file = new File([blob], f.name, { type: f.type || 'application/octet-stream' });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       navigator.share({ files: [file] }).catch(() => { });
@@ -1233,10 +1256,16 @@ function remIdBase(id) {
   return (Math.abs(h) % 250000000) * 8;
 }
 
-// next occurrence (ms) of rem's time on one of its days, strictly after `from`
+// next occurrence (ms) of rem's time on one of its days, strictly after `from`;
+// rem.date ('YYYY-MM-DD') pins a one-shot to that calendar day instead
 function nextRemAt(rem, from) {
   const t = (rem.time || '').split(':').map(Number);
-  if (t.length !== 2 || isNaN(t[0]) || isNaN(t[1]) || !(rem.days || []).length) return 0;
+  if (t.length !== 2 || isNaN(t[0]) || isNaN(t[1])) return 0;
+  if (rem.date) {
+    const at = new Date(rem.date + 'T' + rem.time).getTime();
+    return at > (from || Date.now()) ? at : 0;
+  }
+  if (!(rem.days || []).length) return 0;
   const after = from || Date.now();
   const base = new Date(after);
   for (let d = 0; d < 8; d++) {
@@ -1251,8 +1280,8 @@ function nextRemAt(rem, from) {
 function allRemTasks() {
   const out = [];
   state.spaces.forEach(sp => {
-    const lists = sp.shared ? [spCats(sp, 'todo'), spCats(sp, 'wish')] : [sp.categories || []];
-    lists.forEach(list => list.forEach(c => c.tasks.forEach(t => { if (t.rem) out.push({ sp, cat: c, task: t }); })));
+    const lists = sp.shared ? [['todo', spCats(sp, 'todo')], ['wish', spCats(sp, 'wish')]] : [[null, sp.categories || []]];
+    lists.forEach(([board, list]) => list.forEach(c => c.tasks.forEach(t => { if (t.rem) out.push({ sp, board, cat: c, task: t }); })));
   });
   return out;
 }
@@ -1265,6 +1294,10 @@ function fmtRemDate(ts) {
   return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 function fmtRem(rem) {
+  if (rem.date) {
+    const [y, m, d] = rem.date.split('-');
+    return rem.time + ' · ' + d + '.' + m + '.' + y;
+  }
   const days = (rem.days || []).length === 7 ? t('daily')
     : (rem.days || []).map(d => t(DAY_SHORT[d - 1])).join(' ');
   return rem.time + ' · ' + days + ' · ' + t(rem.rep ? 'weekly' : 'once');
@@ -1302,7 +1335,7 @@ async function doSyncReminders() {
     live.forEach(({ cat, task }) => {
       const rem = task.rem, base = remIdBase(task.id);
       const t = rem.time.split(':').map(Number);
-      if (rem.rep) {
+      if (rem.rep && !rem.date) {
         rem.days.forEach(d => notifs.push({
           id: base + d,
           title: task.text,
@@ -1338,13 +1371,25 @@ async function doSyncReminders() {
   ln.addListener('localNotificationActionPerformed', ev => {
     const id = ev && ev.notification && ev.notification.extra && ev.notification.extra.taskId;
     if (!id) return;
-    const hit = allRemTasks().find(({ task }) => task.id === id);
-    if (!hit) return;
-    const idx = visSpaces().indexOf(hit.sp);
-    if (idx >= 0) spaceIndex = idx;
-    subtaskView = null; historyView = settingsView = themesView = connView = searchView = false;
-    render();
-    setTimeout(() => flashItem(id), 120);
+    const go = () => {
+      // find the task even without rem (a one-shot may have expired by now)
+      let hit = null;
+      state.spaces.forEach(sp => {
+        const lists = sp.shared ? [['todo', spCats(sp, 'todo')], ['wish', spCats(sp, 'wish')]] : [[null, sp.categories || []]];
+        lists.forEach(([board, list]) => list.forEach(c => c.tasks.forEach(t => { if (t.id === id) hit = { sp, board, cat: c, task: t }; })));
+      });
+      if (!hit) return false;
+      if (hit.sp.shared && hit.board) hit.sp.mode = hit.board;
+      const idx = visSpaces().indexOf(hit.sp);
+      if (idx >= 0) spaceIndex = idx;
+      subtaskView = null; historyView = settingsView = themesView = connView = searchView = false;
+      closeDrawer();
+      render();
+      setTimeout(() => flashItem(id), 300);
+      return true;
+    };
+    // cold start: state/render may still be settling — retry once
+    if (!go()) setTimeout(go, 700);
   });
 })();
 
