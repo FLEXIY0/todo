@@ -34,9 +34,6 @@ Pure vanilla JS/CSS — no frameworks, no bundler, no dependencies.
 **First-run tour:**
 On a fresh install (`firstRun` = no saved state) the board starts empty and `openTour()` (ui.js) runs an animated, gesture-by-gesture intro (`TOUR` steps, `#tour` overlay). Each step is a composed mini-scene (`tgScene(g)` builds fake task rows/pages/drawer/search-pill from `tgRow` blocks; `.tg-*` keyframes in styles.css animate a finger + the UI reacting: strike-through on tap, row lift + menu on hold, subtasks unfolding, page flip, drawer slide, pull-to-search, category chip pop). Step changes replay a slide-in via the `.swap` reflow trick. `settings.onboarded` gates it: set true on finish/skip, and pre-set true for existing users on upgrade so they don't get it. Replayable from About → "How to use".
 
-**Category reorder:**
-Reordering is a dedicated mode (`reorderMode`), entered from the category menu ("Reorder categories"). It shows a drag handle (`.cat-handle`, ⠿) per category and a "Done" bar; `setupReorderDrag`/`beginHandleDrag` move a category by its handle (no long-press lift). Normal long-press on a header opens the category menu.
-
 **Top label:**
 `renderTabs`: if *every* visible space has its label enabled, all show as tabs (tap to switch); if at least one is hidden (`tabDot`), only the *current* space's label is shown (or nothing if it's hidden). Hidden on any nested screen.
 
@@ -83,7 +80,10 @@ A task with subtasks cannot be toggled manually — `syncParentDone()` keeps its
 `setupLongPress(el, cb)` in `app.js` handles both touch and mouse with a 480ms timer and a 9px movement threshold. There is a separate inline long-press for empty space in `ui.js` using the same pattern.
 
 **Category reorder:**
-Category headers use `setupCategoryReorder()` (not `setupLongPress`): a long-press lifts the category (`.drag-lift`), dragging slides neighbours via transforms (`.drag-shift`) and reorders `state.categories` on drop; releasing without movement opens the category sheet instead.
+Category headers use `setupCategoryReorder()` (not `setupLongPress`): a long-press lifts the category (`.drag-lift`), dragging slides neighbours via transforms (`.drag-shift`) and reorders the list on drop; releasing without movement opens the category sheet instead. Holding the finger near the top/bottom screen edge **auto-scrolls** the page (rAF loop; midpoints are kept in document coordinates), and swap decisions compare the *finger's* document position against neighbour midpoints — both together let a small category be carried past one taller than the screen. While a drag is live, `catDragLive` blocks the ui.js gesture router (page flips and pull-to-search).
+
+**Send to space:**
+Task menu → "Send to space…" (`openSendTaskSheet` → pick target space/board from `sendTargets()` → pick target category or a new one named after the source → Copy/Move); category menu has the same minus the category step (`openSendCategorySheet`, merges into a same-named target category if present). Clones always get fresh ids (`cloneTask`) so a move out of the shared space (which writes tombstones via `tombIfShared`) can never kill the copy elsewhere.
 
 **History / Settings / Themes / About:**
 `historyView`, `settingsView` and `themesView` flags switch `render()` to the diff-styled journal screen, the settings screen (space options + a Fonts section) and the theme picker. All three are nested screens reached from the drawer, closed by back gesture/swipe, and registered in `closeTopLayer`/`nestedView`/`flipBackDragStart`. "About" is a plain sheet (`openAbout()` in `ui.js`, version in `APP_VERSION`).

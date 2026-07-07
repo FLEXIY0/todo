@@ -99,7 +99,7 @@ let themesView = false;   // themes picker screen
 let connView = false;     // sync connection status screen
 let searchView = false;   // search screen (pull down from the top to open)
 let searchQuery = '';
-let reorderMode = false;  // category drag-to-reorder mode (toggled from the category menu)
+let catDragLive = false;  // a category is lifted and being dragged (blocks other gestures)
 
 const strikeForwardSet = new Set();
 const strikeReverseSet = new Set();
@@ -338,21 +338,6 @@ function renderSpace(container, space) {
   const list = spCats(space);
   const tree = treeOn(space);
 
-  if (reorderMode) {
-    if (list.length < 2) { reorderMode = false; }
-    else {
-      const bar = document.createElement('div');
-      bar.className = 'reorder-bar';
-      bar.innerHTML = `<span class="sync-lbl">Drag ⠿ to reorder categories</span>`;
-      const done = document.createElement('span');
-      done.className = 'sync-btn';
-      done.textContent = 'Done';
-      done.addEventListener('click', () => { reorderMode = false; render(); });
-      bar.appendChild(done);
-      container.appendChild(bar);
-    }
-  }
-
   list.forEach(cat => {
     const catEl = document.createElement('div');
     catEl.className = 'category';
@@ -368,20 +353,12 @@ function renderSpace(container, space) {
       if (sum > 0) countTxt += ` · ${fmtPrice(sum)}`;
     }
     header.innerHTML = `<span class="cat-line"></span><span class="category-name">${esc(cat.name)}</span><span class="cat-line-mid"></span><span class="category-count">${esc(countTxt)}</span><span class="cat-line"></span>`;
-    if (reorderMode) {
-      catEl.classList.add('reordering');
-      const handle = document.createElement('span');
-      handle.className = 'cat-handle';
-      handle.innerHTML = iconSvg('drag');
-      catEl.appendChild(handle);
-      setupReorderDrag(handle, catEl, cat.id);
-    } else {
-      // long-press opens the category menu; triple tap clears completed
-      setupLongPress(header, () => openCategorySheet(cat.id));
-      setupTripleTap(header, () => {
-        if (cat.tasks.some(t => t.done)) { navigator.vibrate && navigator.vibrate(20); clearCompletedTasks(cat.id); }
-      });
-    }
+    // hold lifts the category for drag-to-reorder; releasing the hold
+    // without moving opens the category menu. Triple tap clears completed.
+    setupCategoryReorder(header, catEl, cat.id);
+    setupTripleTap(header, () => {
+      if (cat.tasks.some(t => t.done)) { navigator.vibrate && navigator.vibrate(20); clearCompletedTasks(cat.id); }
+    });
     catEl.appendChild(header);
 
     const tasksEl = document.createElement('div');
@@ -880,6 +857,144 @@ function flashItem(id, isCat) {
   setTimeout(() => el.classList.remove('flash'), 1500);
 }
 
+// ── Send to space (copy / move across spaces & boards) ───────
+// Task menu → "Send to space…" → pick target space/board → pick target
+// category (or a new one named after the source) → Copy or Move.
+// Category menu has the same flow minus the category step. Clones always
+// get fresh ids, so a move out of the shared space (which leaves a
+// tombstone behind) can never kill the copy on the other side.
+function sendTargets() {
+  const cur = curSpace();
+  const curBoard = cur.shared ? (cur.mode || 'todo') : null;
+  const out = [];
+  visSpaces().forEach(sp => {
+    if (sp.shared) {
+      [['todo', 'To-Do'], ['wish', 'Wishlist']].forEach(([b, lbl]) => {
+        if (sp.id === cur.id && b === curBoard) return;
+        out.push({ sp, board: b, label: `${sp.name} · ${lbl}` });
+      });
+    } else if (sp.id !== cur.id) {
+      out.push({ sp, board: null, label: sp.name });
+    }
+  });
+  return out;
+}
+
+function cloneTask(task) {
+  const c = { id: uid('t'), text: task.text, done: task.done, mt: nextMt() };
+  if (task.price != null && task.price !== '') c.price = task.price;
+  if (task.rem) c.rem = JSON.parse(JSON.stringify(task.rem));
+  if (task.subtasks && task.subtasks.length) {
+    c.subtasks = task.subtasks.map(s => {
+      const cs = { id: uid('s'), text: s.text, done: s.done };
+      if (s.price != null && s.price !== '') cs.price = s.price;
+      return cs;
+    });
+  }
+  return c;
+}
+
+function openSendTaskSheet(catId, taskId) {
+  const cat = cats().find(c => c.id === catId);
+  const task = cat?.tasks.find(t => t.id === taskId);
+  if (!task) return;
+  const targets = sendTargets();
+  if (!targets.length) { toast('No other space to send to'); return; }
+  setTimeout(() => openSheet('Send task to…', targets.map(t => ({
+    icon: (t.board === 'wish' || (!t.board && t.sp.tree)) ? '∴' : '≡',
+    label: t.label,
+    action: () => pickSendCategory(t, catId, taskId),
+  }))), 260);
+}
+
+function pickSendCategory(t, catId, taskId) {
+  const srcCat = cats().find(c => c.id === catId);
+  if (!srcCat) return;
+  const list = spCats(t.sp, t.board);
+  const items = [
+    { icon: '+', label: `New category "${trunc(srcCat.name, 20)}"`, action: () => askCopyMove(t, null, catId, taskId) },
+    ...list.map(c => ({ icon: '≡', label: c.name, action: () => askCopyMove(t, c.id, catId, taskId) })),
+  ];
+  setTimeout(() => openSheet(`${t.label} — into which category?`, items), 260);
+}
+
+function askCopyMove(t, targetCatId, catId, taskId) {
+  setTimeout(() => openSheet('Copy or move?', [
+    { icon: '⧉', label: 'Copy here', action: () => doSendTask(t, targetCatId, catId, taskId, false) },
+    { icon: '→', label: 'Move here', action: () => doSendTask(t, targetCatId, catId, taskId, true) },
+  ]), 260);
+}
+
+function doSendTask(t, targetCatId, catId, taskId, move) {
+  const srcCat = cats().find(c => c.id === catId);
+  const task = srcCat?.tasks.find(x => x.id === taskId);
+  if (!task) return;
+  const list = spCats(t.sp, t.board);
+  let target = targetCatId ? list.find(c => c.id === targetCatId) : null;
+  if (targetCatId && !target) { toast('That category is gone'); return; }
+  if (!target) {
+    // reuse a same-named category in the target instead of duplicating it
+    target = list.find(c => c.name === srcCat.name);
+    if (!target) {
+      target = { id: uid('c'), name: srcCat.name, tasks: [], mt: nextMt() };
+      list.push(target);
+    }
+  }
+  target.tasks.push(cloneTask(task));
+  if (move) {
+    srcCat.tasks.splice(srcCat.tasks.indexOf(task), 1);
+    tombIfShared(curSpace(), task.id);
+    logH('~', `Moved task "${trunc(task.text)}" to ${t.label}`);
+  } else {
+    logH('+', `Copied task "${trunc(task.text)}" to ${t.label}`);
+  }
+  toast(`${move ? 'Moved' : 'Copied'} to ${t.label}`);
+  render();
+}
+
+function openSendCategorySheet(catId) {
+  const cat = cats().find(c => c.id === catId);
+  if (!cat) return;
+  const targets = sendTargets();
+  if (!targets.length) { toast('No other space to send to'); return; }
+  setTimeout(() => openSheet(`Send "${trunc(cat.name, 24)}" to…`, targets.map(t => ({
+    icon: (t.board === 'wish' || (!t.board && t.sp.tree)) ? '∴' : '≡',
+    label: t.label,
+    action: () => askCopyMoveCat(t, catId),
+  }))), 260);
+}
+
+function askCopyMoveCat(t, catId) {
+  setTimeout(() => openSheet('Copy or move?', [
+    { icon: '⧉', label: 'Copy here', action: () => doSendCategory(t, catId, false) },
+    { icon: '→', label: 'Move here', action: () => doSendCategory(t, catId, true) },
+  ]), 260);
+}
+
+function doSendCategory(t, catId, move) {
+  const cat = cats().find(c => c.id === catId);
+  if (!cat) return;
+  const list = spCats(t.sp, t.board);
+  // merge into a same-named category if the target already has one
+  let target = list.find(c => c.name === cat.name);
+  if (!target) {
+    target = { id: uid('c'), name: cat.name, tasks: [], mt: nextMt() };
+    list.push(target);
+  }
+  cat.tasks.forEach(task => target.tasks.push(cloneTask(task)));
+  if (move) {
+    const arr = cats();
+    arr.splice(arr.indexOf(cat), 1);
+    tombIfShared(curSpace(), cat.id);
+    cat.tasks.forEach(task => tombIfShared(curSpace(), task.id));
+    logH('~', `Moved category "${trunc(cat.name)}" to ${t.label}`);
+  } else {
+    logH('+', `Copied category "${trunc(cat.name)}" to ${t.label}`);
+  }
+  toast(`${move ? 'Moved' : 'Copied'} to ${t.label}`);
+  render();
+}
+
 // ── Reminders ────────────────────────────────────────────────
 // A task can carry rem = { time:'HH:MM', days:[1..7 ISO Mon=1], rep:bool }.
 // On Android they become real scheduled notifications via the Capacitor
@@ -1205,7 +1320,6 @@ function flipDragStart(dir, tgtIdx) {
   const vis = visSpaces();
   const tgt = tgtIdx !== undefined ? tgtIdx : spaceIndex + dir;
   if (tgt < 0 || tgt >= vis.length || tgt === spaceIndex) return false;
-  reorderMode = false; // leave reorder mode when changing spaces
   buildPeelLayer(dir);
   flip.prevIndex = spaceIndex;
   spaceIndex = tgt;
@@ -1270,66 +1384,115 @@ function flipTo(dir, mutate) {
   tweenPeel(0, 1, () => { f.layer.remove(); flip = null; });
 }
 
-// ── Category reorder (dedicated mode, drag by the handle) ────
-// Entered from the category menu ("Reorder categories"); a drag handle ⠿
-// appears on each header. Pressing the handle starts the drag immediately
-// (no long-press, no accidental lift) — neighbours slide out of the way.
+// ── Category reorder (hold & drag) ───────────────────────────
+// Long-press on a header lifts the category; dragging carries it while
+// neighbours slide out of the way; releasing without movement opens the
+// category menu instead. While dragging, holding the finger near the top
+// or bottom of the screen auto-scrolls the list — that's what lets a small
+// category be carried past one taller than the screen. Reordering compares
+// the FINGER's document position against neighbour midpoints (not the
+// dragged card's center), so giant neighbours swap exactly when the finger
+// crosses their middle.
 const CAT_GAP = 18; // matches .categories flex gap in CSS
 
-function setupReorderDrag(handle, catEl, catId) {
+function setupCategoryReorder(header, catEl, catId) {
   const start = (e) => {
-    if (e.cancelable) e.preventDefault();
     const p = e.touches ? e.touches[0] : e;
-    beginHandleDrag(catEl, catId, p.clientY);
+    beginCategoryDrag(catEl, catId, p.clientX, p.clientY);
   };
-  handle.addEventListener('touchstart', start, { passive: false });
-  handle.addEventListener('mousedown', start);
+  header.addEventListener('touchstart', start, { passive: true });
+  header.addEventListener('mousedown', start);
 }
 
-function beginHandleDrag(catEl, catId, sy) {
-  const els = [...document.querySelectorAll('#categoriesContainer > .category')];
-  const i0 = els.indexOf(catEl);
-  if (i0 < 0) return;
-  let target = i0;
-  const mids = els.map(el => { const r = el.getBoundingClientRect(); return r.top + r.height / 2; });
-  const slot = catEl.offsetHeight + CAT_GAP;
-  navigator.vibrate && navigator.vibrate(15);
-  catEl.classList.add('drag-lift');
-  els.forEach(el => { if (el !== catEl) el.classList.add('drag-shift'); });
+function beginCategoryDrag(catEl, catId, sx, sy) {
+  let lifted = false, moved = false;
+  let els = [], mids = [], i0 = 0, target = 0, slot = 0;
+  let lastY = sy, scrolled = 0, scrollV = 0, scrollRaf = null;
 
-  const move = (e) => {
-    if (e.cancelable) e.preventDefault();
-    const p = e.touches ? e.touches[0] : e;
-    const dy = p.clientY - sy;
-    catEl.style.transform = `translateY(${dy}px)`;
-    const center = mids[i0] + dy;
+  const timer = setTimeout(() => {
+    lifted = true;
+    catDragLive = true;
+    navigator.vibrate && navigator.vibrate(30);
+    els = [...document.querySelectorAll('#categoriesContainer > .category')];
+    i0 = target = els.indexOf(catEl);
+    // midpoints in document coordinates so auto-scroll doesn't stale them
+    mids = els.map(el => { const r = el.getBoundingClientRect(); return r.top + window.scrollY + r.height / 2; });
+    slot = catEl.offsetHeight + CAT_GAP;
+    catEl.classList.add('drag-lift');
+    els.forEach(el => { if (el !== catEl) el.classList.add('drag-shift'); });
+  }, 480);
+
+  const apply = () => {
+    // the card follows the finger through both drag and scroll
+    catEl.style.transform = `translateY(${(lastY - sy) + scrolled}px)`;
+    const finger = lastY + window.scrollY;
     target = i0;
     els.forEach((el, j) => {
       if (j === i0) return;
-      if (j < i0 && center < mids[j]) { el.style.transform = `translateY(${slot}px)`; target = Math.min(target, j); }
-      else if (j > i0 && center > mids[j]) { el.style.transform = `translateY(${-slot}px)`; target = Math.max(target, j); }
+      if (j < i0 && finger < mids[j]) { el.style.transform = `translateY(${slot}px)`; target = Math.min(target, j); }
+      else if (j > i0 && finger > mids[j]) { el.style.transform = `translateY(${-slot}px)`; target = Math.max(target, j); }
       else el.style.transform = '';
     });
   };
-  const end = () => {
+
+  // touchmove doesn't fire while the finger rests at the edge — keep
+  // scrolling on rAF until the finger leaves the zone or lifts
+  const autoScroll = () => {
+    scrollRaf = null;
+    if (!lifted || !scrollV) return;
+    const before = window.scrollY;
+    window.scrollBy(0, scrollV);
+    const d = window.scrollY - before;
+    if (d) { scrolled += d; apply(); }
+    scrollRaf = requestAnimationFrame(autoScroll);
+  };
+
+  const move = (e) => {
+    const p = e.touches ? e.touches[0] : e;
+    if (!lifted) {
+      // movement before the long-press fires = scroll intent, abort
+      if (Math.abs(p.clientX - sx) > 9 || Math.abs(p.clientY - sy) > 9) end(true);
+      return;
+    }
+    if (e.cancelable) e.preventDefault(); // keep the page from scrolling
+    lastY = p.clientY;
+    if (Math.abs((lastY - sy) + scrolled) > 6) moved = true;
+    const h = window.innerHeight, ZONE = 90;
+    scrollV = p.clientY < ZONE ? -Math.ceil((ZONE - p.clientY) / 5)
+      : p.clientY > h - ZONE ? Math.ceil((p.clientY - (h - ZONE)) / 5)
+      : 0;
+    if (scrollV && !scrollRaf) scrollRaf = requestAnimationFrame(autoScroll);
+    apply();
+  };
+
+  const end = (cancelled) => {
+    clearTimeout(timer);
+    catDragLive = false;
+    scrollV = 0;
+    if (scrollRaf) { cancelAnimationFrame(scrollRaf); scrollRaf = null; }
     document.removeEventListener('touchmove', move);
-    document.removeEventListener('touchend', end);
-    document.removeEventListener('touchcancel', end);
+    document.removeEventListener('touchend', onEnd);
+    document.removeEventListener('touchcancel', onCancel);
     document.removeEventListener('mousemove', move);
-    document.removeEventListener('mouseup', end);
-    if (target !== i0) {
+    document.removeEventListener('mouseup', onEnd);
+    if (!lifted) return; // released before the long-press fired
+    if (moved && !cancelled && target !== i0) {
       const arr = cats();
       const [cat] = arr.splice(i0, 1);
       arr.splice(target, 0, cat);
       logH('~', `Moved category "${trunc(cat.name)}"`);
     }
-    render(); // clears lift/shift classes and inline transforms, stays in reorder mode
+    render(); // clears lift/shift classes and inline transforms
+    if (!moved && cancelled !== true) openCategorySheet(catId);
   };
+  const onEnd = () => end(false);
+  const onCancel = () => end(true);
+
   document.addEventListener('touchmove', move, { passive: false });
-  document.addEventListener('touchend', end);
-  document.addEventListener('touchcancel', end);
+  document.addEventListener('touchend', onEnd);
+  document.addEventListener('touchcancel', onCancel);
   document.addEventListener('mousemove', move);
-  document.addEventListener('mouseup', end);
+  document.addEventListener('mouseup', onEnd);
 }
 
 // ── Tap routing: single = toggle / open, double = open subtasks ──

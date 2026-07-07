@@ -1,5 +1,5 @@
 // ── App meta ─────────────────────────────────────────────────
-const APP_VERSION = '2.6';
+const APP_VERSION = '2.7';
 const REPO_URL = 'https://github.com/FLEXIY0/todo';
 
 // ── Material icons (Google standard, inline SVG, themeable) ──
@@ -273,13 +273,16 @@ const clampP = v => Math.min(1, Math.max(0, v));
 
 document.addEventListener('touchmove', (e) => {
   if (overlayOpen()) return;
+  if (typeof catDragLive !== 'undefined' && catDragLive) return; // category drag owns the gesture
   const dx = e.touches[0].clientX - swTouchX, dy = e.touches[0].clientY - swTouchY;
   if (!swDir) {
     if (Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
     swDir = Math.abs(dx) >= Math.abs(dy) ? 'h' : 'v';
   }
   // vertical pull-down at the very top of the list → reveal search
+  // (not while a category is lifted for drag-to-reorder)
   if (swDir === 'v') {
+    if (typeof catDragLive !== 'undefined' && catDragLive) { pullActive = false; setPull(0); return; }
     if (!pullActive && dy > 0 && !drawerOpen && !nestedView() && window.scrollY <= 0) pullActive = true;
     if (pullActive) {
       if (dy <= 0) { pullActive = false; pullP = 0; setPull(0); return; }
@@ -470,11 +473,9 @@ function openCategorySheet(catId) {
   const hasDone = cat.tasks.some(t => t.done);
   const items = [
     { icon: '✏️', label: 'Rename category', action: () => promptRenameCategory(catId) },
+    { icon: '→', label: 'Send to space…', action: () => openSendCategorySheet(catId) },
     { icon: '⧉', label: 'Copy as text', action: () => exportCategory(catId) },
   ];
-  if (cats().length > 1) items.push(
-    { icon: '⠿', label: 'Reorder categories', action: () => { reorderMode = true; render(); toast('Drag the handles to reorder'); } }
-  );
   if (hasDone) items.push(
     { icon: '✓', label: 'Clear completed', action: () => clearCompletedTasks(catId) }
   );
@@ -505,6 +506,7 @@ function openTaskSheet(catId, taskId) {
   );
   items.push(
     { icon: '⏰', label: task.rem ? `Reminder: ${fmtRem(task.rem)}` : 'Set reminder', action: () => openReminderEditor(catId, taskId) },
+    { icon: '→', label: 'Send to space…', action: () => openSendTaskSheet(catId, taskId) },
     { icon: '⧉', label: 'Copy as text', action: () => exportTask(catId, taskId) },
     { icon: '🗑️', label: 'Delete task', danger: true, action: () => deleteTask(catId, taskId) },
   );
